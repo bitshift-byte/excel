@@ -1,0 +1,29 @@
+services:
+  # 后端：FastAPI 应用（同时服务 API 与前端 HTML 模板）
+  excel-merger:
+    build: .
+    container_name: excel-merger
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      # 上传文件持久化
+      - ./uploads:/app/uploads
+      # 输出文件持久化
+      - ./output:/app/output
+      # 用户自定义规则持久化
+      - ./rules.json:/app/rules.json
+    expose:
+      - "8000"            # 仅对 nginx 可见，不对外暴露
+
+  # 前端入口：Nginx 反向代理（域名/HTTPS/上传限流统一在这里）
+  nginx:
+    image: nginx:alpine
+    container_name: excel-merger-nginx
+    restart: unless-stopped
+    depends_on:
+      - excel-merger
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro

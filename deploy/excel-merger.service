@@ -1,0 +1,15 @@
+[Unit]
+Description=Excel Merger Service
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/excel-merger
+ExecStart=/opt/excel-merger/venv/bin/uvicorn app:app --host 0.0.0.0 --port 8000 --workers 4
+Restart=always
+RestartSec=5
+Environment=TZ=Asia/Shanghai
+
+[Install]
+WantedBy=multi-user.target

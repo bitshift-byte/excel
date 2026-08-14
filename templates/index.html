@@ -1,0 +1,1464 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Excel 数据合并筛选平台</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ==================== Design Tokens ==================== */
+:root{
+  --primary:#1E3A5F;
+  --primary-d:#15293F;
+  --primary-l:#2E5A8F;
+  --primary-bg:#EFF4F9;
+  --secondary:#2563EB;
+  --accent:#059669;
+  --accent-d:#047857;
+  --accent-l:#10B981;
+  --accent-bg:#ECFDF5;
+  --amber:#D97706;
+  --amber-bg:#FFFBEB;
+  --danger:#DC2626;
+  --danger-bg:#FEF2F2;
+  --purple:#7C3AED;
+  --purple-bg:#F5F3FF;
+  --bg:#F8FAFC;
+  --surface:#FFFFFF;
+  --muted:#F1F5F9;
+  --muted-2:#E2E8F0;
+  --text:#0F172A;
+  --text-2:#334155;
+  --text-3:#64748B;
+  --text-4:#94A3B8;
+  --border:#E2E8F0;
+  --border-l:#F1F5F9;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:0 4px 6px -1px rgba(0,0,0,.06),0 2px 4px -2px rgba(0,0,0,.04);
+  --shadow-lg:0 10px 15px -3px rgba(0,0,0,.08),0 4px 6px -4px rgba(0,0,0,.05);
+  --shadow-xl:0 20px 25px -5px rgba(0,0,0,.1),0 8px 10px -6px rgba(0,0,0,.05);
+  --r-xl:20px;
+  --r-lg:16px;
+  --r-md:12px;
+  --r-sm:8px;
+  --sidebar-w:248px;
+  --font-display:'Outfit',-apple-system,BlinkMacSystemFont,sans-serif;
+  --font-body:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+}
+
+/* ==================== Reset ==================== */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+*::-webkit-scrollbar{width:6px;height:6px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:3px}
+*::-webkit-scrollbar-thumb:hover{background:#94A3B8}
+
+body{font-family:var(--font-body);background:var(--bg);color:var(--text);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+
+h1,h2,h3,h4,h5{font-family:var(--font-display)}
+
+/* ==================== Layout ==================== */
+.app{display:flex;min-height:100vh}
+
+/* ---- Sidebar ---- */
+.sidebar{
+  width:var(--sidebar-w);background:var(--surface);
+  border-right:1px solid var(--border);
+  display:flex;flex-direction:column;position:fixed;top:0;bottom:0;left:0;z-index:200;
+  transition:transform .3s;
+}
+.sidebar-brand{
+  padding:22px 22px;display:flex;align-items:center;gap:12px;
+  border-bottom:1px solid var(--border-l);
+}
+.sidebar-brand .logo{
+  width:38px;height:38px;border-radius:10px;
+  background:var(--primary);
+  display:flex;align-items:center;justify-content:center;
+}
+.sidebar-brand .logo{color:#fff}
+.sidebar-brand .logo svg{width:20px;height:20px}
+.sidebar-brand .name{font-family:var(--font-display);font-size:16px;font-weight:700;letter-spacing:-.3px;color:var(--primary)}
+.sidebar-brand .sub{font-size:11px;color:var(--text-4);font-weight:400}
+
+.sidebar-nav{flex:1;padding:16px 14px;overflow-y:auto}
+.nav-section{margin-bottom:20px}
+.nav-section-title{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text-4);padding:0 10px 8px;font-weight:600;font-family:var(--font-display)}
+.nav-item{
+  display:flex;align-items:center;gap:10px;padding:9px 10px;
+  border-radius:var(--r-sm);font-size:13px;color:var(--text-3);
+  cursor:pointer;transition:background .2s,color .2s;margin-bottom:1px;font-weight:500;
+  position:relative;
+}
+.nav-item::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:0;background:var(--accent);border-radius:0 3px 3px 0;transition:height .2s}
+.nav-item:hover{background:var(--muted);color:var(--text)}
+.nav-item.active{background:var(--primary-bg);color:var(--primary);font-weight:600}
+.nav-item.active::before{height:20px}
+.nav-item svg{width:17px;height:17px;flex-shrink:0}
+.nav-item .badge-count{margin-left:auto;background:var(--muted-2);font-size:10px;padding:1px 7px;border-radius:8px;color:var(--text-3);font-weight:600}
+
+.sidebar-footer{padding:16px 22px;border-top:1px solid var(--border-l);font-size:11px;color:var(--text-4)}
+.sidebar-footer .status{display:flex;align-items:center;gap:6px;margin-bottom:3px;color:var(--text-3)}
+.sidebar-footer .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px var(--accent-l);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ---- Main ---- */
+.main{flex:1;margin-left:var(--sidebar-w);display:flex;flex-direction:column;min-height:100vh}
+
+/* ---- Topbar ---- */
+.topbar{
+  height:60px;background:var(--surface);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 32px;gap:16px;
+  position:sticky;top:0;z-index:100;
+}
+.topbar-title{font-family:var(--font-display);font-size:17px;font-weight:700;color:var(--text)}
+.topbar-subtitle{font-size:12px;color:var(--text-4)}
+.topbar-spacer{flex:1}
+
+/* ---- Progress indicator ---- */
+.progress{display:flex;align-items:center;gap:0}
+.pg-item{display:flex;align-items:center;gap:7px}
+.pg-circle{
+  width:28px;height:28px;border-radius:50%;
+  border:2px solid var(--border);display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;color:var(--text-4);transition:all .25s;flex-shrink:0;
+  font-family:var(--font-display);
+}
+.pg-circle.active{border-color:var(--primary);background:var(--primary);color:#fff;box-shadow:0 0 0 4px var(--primary-bg)}
+.pg-circle.done{border-color:var(--accent);background:var(--accent);color:#fff}
+.pg-label{font-size:12px;color:var(--text-4);font-weight:500;transition:color .25s}
+.pg-label.active{color:var(--primary);font-weight:600}
+.pg-label.done{color:var(--accent)}
+.pg-line{width:24px;height:2px;background:var(--border);margin:0 6px;border-radius:1px;transition:background .25s}
+.pg-line.done{background:var(--accent)}
+
+/* ---- Content ---- */
+.content{flex:1;padding:32px;overflow-x:hidden}
+.content-inner{max-width:1200px;margin:0 auto}
+
+/* ==================== Cards ==================== */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-sm);transition:box-shadow .2s}
+.card:hover{box-shadow:var(--shadow-md)}
+.card-pad{padding:28px}
+.card-head{display:flex;align-items:center;gap:10px;padding:16px 24px;border-bottom:1px solid var(--border-l)}
+.card-head .ch-icon{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:var(--primary-bg);color:var(--primary)}
+.card-head .ch-icon svg{width:17px;height:17px}
+.card-head .ch-title{font-family:var(--font-display);font-size:15px;font-weight:600}
+.card-head .ch-sub{font-size:12px;color:var(--text-4)}
+.card-head .ch-spacer{flex:1}
+
+/* ==================== Dropzone ==================== */
+.dropzone{
+  border:2px dashed var(--muted-2);border-radius:var(--r-md);
+  padding:52px 32px;text-align:center;cursor:pointer;transition:all .25s;
+  background:var(--muted);
+}
+.dropzone:hover{border-color:var(--primary);background:var(--primary-bg);transform:translateY(-1px)}
+.dropzone.dragover{border-color:var(--accent);background:var(--accent-bg);transform:scale(1.01)}
+.dz-icon{margin-bottom:14px;color:var(--text-3)}
+.dz-icon svg{width:48px;height:48px}
+.dz-label{font-family:var(--font-display);font-size:16px;font-weight:600;margin-bottom:6px;color:var(--text)}
+.dz-hint{font-size:13px;color:var(--text-4)}
+#fileInput{display:none}
+
+.file-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.file-chip{
+  display:flex;align-items:center;gap:8px;background:var(--surface);
+  border:1px solid var(--border);border-radius:20px;padding:7px 14px;font-size:13px;
+  transition:all .2s;box-shadow:var(--shadow-sm);
+}
+.file-chip:hover{border-color:var(--primary);box-shadow:var(--shadow-md)}
+.file-chip .fc-icon{color:var(--primary)}
+.file-chip .fc-icon svg{width:16px;height:16px}
+.file-chip .fc-name{font-weight:500;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-chip .fc-size{font-size:11px;color:var(--text-4)}
+.file-chip .fc-x{cursor:pointer;color:var(--text-4);width:18px;height:18px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:all .15s}
+.file-chip .fc-x:hover{background:var(--danger-bg);color:var(--danger)}
+.file-chip .fc-x svg{width:12px;height:12px}
+
+/* ---- Feature bento ---- */
+.bento{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;margin-top:20px}
+.bento-item{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  padding:24px;transition:all .2s;position:relative;overflow:hidden;
+}
+.bento-item::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--primary);opacity:0;transition:opacity .25s}
+.bento-item:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);border-color:var(--muted-2)}
+.bento-item:hover::before{opacity:1}
+.bento-item:nth-child(2)::before{background:var(--accent)}
+.bento-item:nth-child(3)::before{background:var(--secondary)}
+.bento-item:nth-child(4)::before{background:var(--purple)}
+.bento-item .bi-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;background:var(--primary-bg);color:var(--primary)}
+.bento-item:nth-child(2) .bi-icon{background:var(--accent-bg);color:var(--accent)}
+.bento-item:nth-child(3) .bi-icon{background:#EFF6FF;color:var(--secondary)}
+.bento-item:nth-child(4) .bi-icon{background:var(--purple-bg);color:var(--purple)}
+.bento-item .bi-icon svg{width:20px;height:20px}
+.bento-item .bi-title{font-family:var(--font-display);font-weight:600;font-size:14px;margin-bottom:4px}
+.bento-item .bi-desc{font-size:12px;color:var(--text-3);line-height:1.6}
+
+/* ==================== Buttons ==================== */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  padding:10px 20px;border:none;border-radius:var(--r-sm);
+  font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap;
+  font-family:var(--font-body);
+}
+.btn svg{width:16px;height:16px}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:var(--primary-d);box-shadow:0 4px 12px rgba(30,58,95,.25);transform:translateY(-1px)}
+.btn-primary:disabled{background:var(--muted-2);color:var(--text-4);cursor:not-allowed;transform:none;box-shadow:none}
+.btn-accent{background:var(--accent);color:#fff}
+.btn-accent:hover{background:var(--accent-d);box-shadow:0 4px 12px rgba(5,150,105,.25);transform:translateY(-1px)}
+.btn-ghost{background:var(--surface);color:var(--text-2);border:1px solid var(--border)}
+.btn-ghost:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-bg)}
+.btn-lg{padding:12px 28px;font-size:15px}
+.btn-block{width:100%}
+
+/* ==================== Province Selector ==================== */
+.prov-card{margin-bottom:20px}
+.prov-search{
+  width:100%;padding:10px 14px 10px 38px;
+  background:var(--muted);border:1px solid var(--border);border-radius:var(--r-sm);
+  font-size:13px;color:var(--text);transition:all .2s;font-family:inherit;
+}
+.prov-search::placeholder{color:var(--text-4)}
+.prov-search:focus{outline:none;border-color:var(--primary);background:var(--surface);box-shadow:0 0 0 3px var(--primary-bg)}
+.prov-search-wrap{position:relative;margin-bottom:14px}
+.prov-search-wrap svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--text-4)}
+.prov-tags{display:flex;flex-wrap:wrap;gap:7px;max-height:200px;overflow-y:auto;padding:4px 0}
+.prov-tag{
+  padding:6px 14px;border-radius:20px;border:1px solid var(--border);
+  font-size:12px;color:var(--text-2);cursor:pointer;transition:all .2s;user-select:none;font-weight:500;
+}
+.prov-tag:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-bg)}
+.prov-tag.on{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:600;box-shadow:0 2px 8px rgba(30,58,95,.2)}
+.prov-bar{margin-top:12px;padding-top:12px;border-top:1px solid var(--border-l);font-size:12px;color:var(--text-4)}
+.prov-bar strong{color:var(--primary)}
+
+/* ==================== File Card ==================== */
+.file-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:16px;transition:all .2s}
+.file-card:hover{box-shadow:var(--shadow-md)}
+.file-card.on{border-color:var(--accent-l);box-shadow:0 0 0 1px var(--accent-l),var(--shadow-md)}
+.fc-head{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border-l);background:var(--muted)}
+.fc-head .fc-file-icon{display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;background:var(--primary-bg);color:var(--primary)}
+.fc-head .fc-file-icon svg{width:18px;height:18px}
+.fc-head .fc-name{font-family:var(--font-display);font-size:14px;font-weight:600}
+.fc-head .fc-meta{font-size:11px;color:var(--text-4);margin-top:1px}
+.fc-head .fc-badges{margin-left:auto;display:flex;gap:6px;align-items:center}
+
+.badge{font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;display:inline-flex;align-items:center;gap:4px}
+.badge-primary{background:var(--primary-bg);color:var(--primary)}
+.badge-accent{background:var(--accent-bg);color:var(--accent-d)}
+.badge-amber{background:var(--amber-bg);color:var(--amber)}
+.badge-purple{background:var(--purple-bg);color:var(--purple)}
+.badge-hidden{display:none}
+
+/* Tabs */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--surface);overflow-x:auto}
+.tab{display:flex;align-items:center;gap:7px;padding:10px 16px;font-size:13px;font-weight:500;color:var(--text-3);cursor:pointer;white-space:nowrap;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .2s}
+.tab:hover{color:var(--text);background:var(--muted)}
+.tab.on{color:var(--primary);border-bottom-color:var(--primary);font-weight:600;background:var(--primary-bg)}
+.tab-cb{width:16px;height:16px;border:1.5px solid var(--border);border-radius:4px;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0}
+.tab-cb.on{background:var(--accent);border-color:var(--accent)}
+.tab-cb.on svg{opacity:1}
+.tab-cb svg{width:11px;height:11px;color:#fff;opacity:0;transition:opacity .15s}
+.tab-dot{width:6px;height:6px;border-radius:50%;background:var(--amber);flex-shrink:0}
+.tab-dot.hide{display:none}
+.tab-count{font-size:10px;color:var(--text-4);background:var(--muted);padding:1px 6px;border-radius:8px}
+
+.panel{display:none}
+.panel.on{display:block}
+.panel-body{overflow-x:auto;max-height:420px}
+
+/* Editable table */
+table.etbl{border-collapse:collapse;width:100%;font-size:12px}
+.etbl thead th{background:var(--primary-bg);padding:0;border-right:1px solid var(--border-l);border-bottom:2px solid var(--primary-l);position:sticky;top:0;z-index:5;min-width:130px}
+.etbl thead th .cn{font-size:10px;color:var(--text-4);text-align:center;padding-top:5px;font-weight:400}
+.etbl thead th input{width:100%;border:none;padding:4px 8px 5px;font-size:12px;font-weight:600;color:var(--text);background:transparent;text-align:center;font-family:inherit}
+.etbl thead th input:focus{outline:none;background:#fff;box-shadow:inset 0 0 0 2px var(--primary)}
+.etbl thead th input.mod{background:var(--amber-bg);color:var(--amber)}
+.etbl thead th .on{font-size:10px;color:var(--text-4);text-align:center;padding-bottom:4px;text-decoration:line-through;display:none}
+.etbl thead th .on.show{display:block}
+.etbl tbody td{padding:5px 10px;border-right:1px solid var(--border-l);border-bottom:1px solid var(--border-l);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;color:var(--text-2)}
+.etbl tbody tr:nth-child(even) td{background:var(--muted)}
+.etbl tbody tr:hover td{background:var(--primary-bg)}
+
+/* ==================== Stats ==================== */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px 22px;position:relative;overflow:hidden;transition:all .2s}
+.stat:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
+.stat::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--primary)}
+.stat.accent::before{background:var(--accent)}
+.stat.amber::before{background:var(--amber)}
+.stat.purple::before{background:var(--purple)}
+.stat-label{font-size:11px;color:var(--text-4);font-weight:600;text-transform:uppercase;letter-spacing:1px}
+.stat-value{font-family:var(--font-display);font-size:36px;font-weight:800;margin-top:4px;line-height:1;color:var(--primary);letter-spacing:-1px}
+.stat.accent .stat-value{color:var(--accent-d)}
+.stat.amber .stat-value{color:var(--amber)}
+.stat.purple .stat-value{color:var(--purple)}
+.stat-desc{font-size:11px;color:var(--text-4);margin-top:4px}
+
+/* ==================== Result Table ==================== */
+.result-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:16px;box-shadow:var(--shadow-sm)}
+.result-head{padding:14px 20px;border-bottom:1px solid var(--border-l);display:flex;justify-content:space-between;align-items:center;background:var(--muted)}
+.result-head .rh-title{font-family:var(--font-display);font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+.result-head .rh-title .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.result-body{overflow:auto;max-height:560px}
+table.rtbl{border-collapse:collapse;width:100%;font-size:13px}
+.rtbl thead th{background:var(--muted);color:var(--text-2);font-weight:600;padding:10px 14px;text-align:left;white-space:nowrap;border-bottom:2px solid var(--border);position:sticky;top:0;z-index:5}
+.rtbl tbody td{padding:8px 14px;border-bottom:1px solid var(--border-l);white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis;color:var(--text-2)}
+.rtbl tbody tr:nth-child(even){background:var(--muted)}
+.rtbl tbody tr:hover{background:var(--primary-bg)}
+.result-note{font-size:12px;color:var(--text-4);padding:10px 20px;border-top:1px solid var(--border-l);background:var(--muted)}
+
+/* ==================== Step Panels ==================== */
+.step-panel{display:none}
+.step-panel.on{display:block;animation:fadeUp .35s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* ==================== Loading ==================== */
+.loading-overlay{position:fixed;inset:0;background:rgba(15,23,42,.35);backdrop-filter:blur(4px);z-index:999;display:none;align-items:center;justify-content:center}
+.loading-overlay.show{display:flex}
+.loading-box{background:var(--surface);border-radius:var(--r-xl);padding:36px 56px;text-align:center;box-shadow:var(--shadow-xl)}
+.spinner{width:44px;height:44px;margin:0 auto 16px;border:4px solid var(--primary-bg);border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-box p{color:var(--text-2);font-size:14px;font-weight:500}
+
+/* ==================== Toast ==================== */
+.toast{position:fixed;bottom:24px;right:24px;z-index:998;padding:13px 22px;border-radius:var(--r-sm);font-size:14px;font-weight:500;box-shadow:var(--shadow-lg);transform:translateY(100px);opacity:0;transition:all .3s;display:flex;align-items:center;gap:8px}
+.toast.show{transform:translateY(0);opacity:1}
+.toast.error{background:var(--danger);color:#fff}
+.toast.success{background:var(--accent);color:#fff}
+.toast svg{width:18px;height:18px}
+
+/* ==================== Empty ==================== */
+.empty{text-align:center;padding:48px;color:var(--text-4)}
+.empty svg{width:48px;height:48px;margin-bottom:12px;opacity:.4}
+
+/* ==================== Sticky Bar ==================== */
+.sticky-bar{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:14px 32px;display:flex;gap:10px;z-index:50;box-shadow:0 -4px 12px rgba(0,0,0,.03)}
+
+/* ==================== Rule Manager Page ==================== */
+.rule-page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.rule-page-head h2{font-family:var(--font-display);font-size:22px;font-weight:700;display:flex;align-items:center;gap:10px}
+.rule-page-head h2 svg{width:22px;height:22px;color:var(--primary)}
+.rule-page-head .rph-sub{font-size:13px;color:var(--text-4);margin-top:2px}
+.rule-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);margin-bottom:14px;overflow:hidden;transition:all .2s}
+.rule-card:hover{box-shadow:var(--shadow-md)}
+.rule-card-head{padding:16px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border-l);cursor:pointer}
+.rule-card-head .rch-left{display:flex;align-items:center;gap:12px}
+.rule-card-head .rch-icon{width:38px;height:38px;border-radius:var(--r-sm);background:var(--primary-bg);color:var(--primary);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.rule-card-head .rch-icon svg{width:18px;height:18px}
+.rule-card-head .rch-name{font-size:15px;font-weight:700;color:var(--text)}
+.rule-card-head .rch-meta{font-size:12px;color:var(--text-4);margin-top:2px}
+.rule-card-head .rch-actions{display:flex;gap:8px;align-items:center}
+.rule-card-head .rch-actions .rca-btn{width:34px;height:34px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.rule-card-head .rch-actions .rca-btn:hover{background:var(--primary-bg);border-color:var(--primary-l)}
+.rule-card-head .rch-actions .rca-btn.danger:hover{background:var(--danger-bg);border-color:var(--danger)}
+.rule-card-head .rch-actions .rca-btn svg{width:15px;height:15px;color:var(--text-3)}
+.rule-card-head .rch-chevron{width:34px;height:34px;display:flex;align-items:center;justify-content:center;color:var(--text-3);transition:transform .2s}
+.rule-card.expanded .rch-chevron{transform:rotate(90deg)}
+.rule-card-body{display:none;padding:16px 20px 20px}
+.rule-card.expanded .rule-card-body{display:block;animation:fadeUp .2s ease}
+.std-header-block{background:var(--muted);border:1px solid var(--border-l);border-radius:var(--r-md);padding:12px 14px;margin-bottom:10px}
+.std-header-block .shb-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.std-header-block .shb-num{width:22px;height:22px;border-radius:50%;background:var(--primary);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.std-header-block .shb-name{font-size:14px;font-weight:600;color:var(--text)}
+.std-header-block .shb-cols{display:flex;flex-wrap:wrap;gap:5px;padding-left:30px}
+.std-header-block .shb-col-tag{padding:2px 9px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);font-size:12px;color:var(--text-2);font-weight:500}
+.rule-empty-page{text-align:center;padding:60px 20px;color:var(--text-4)}
+.rule-empty-page svg{width:56px;height:56px;margin-bottom:12px;opacity:.3}
+.rule-empty-page .rep-title{font-size:16px;font-weight:600;color:var(--text-3);margin-bottom:4px}
+.rule-empty-page .rep-desc{font-size:13px}
+.rule-form-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:24px;margin-bottom:16px}
+.rule-form-wrap .rfw-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.rule-form-wrap .rfw-head h3{font-family:var(--font-display);font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+.rule-form-group{margin-bottom:16px}
+.rule-form-label{font-size:13px;font-weight:600;color:var(--text-2);margin-bottom:6px;display:block}
+.rule-form-input{width:100%;padding:9px 14px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:14px;font-family:var(--font-body);transition:border .15s;box-sizing:border-box}
+.rule-form-input:focus{outline:none;border-color:var(--primary-l)}
+#stdHeaderList{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start}
+.std-header-row{border:1px solid var(--border);border-radius:var(--r-md);padding:12px 14px;background:var(--muted);width:210px;flex-shrink:0;position:relative}
+.std-header-row .shr-name{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.std-header-row .shr-name input{flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;background:var(--surface);box-sizing:border-box;min-width:0}
+.std-header-row .shr-name input:focus{outline:none;border-color:var(--primary-l)}
+.std-header-row .shr-del{width:30px;height:30px;border:none;border-radius:var(--r-sm);background:var(--danger-bg);color:var(--danger);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.std-header-row .shr-del svg{width:14px;height:14px}
+.std-header-row .shr-label{font-size:11px;color:var(--text-4);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.source-col-tags{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:34px;padding:5px 8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface)}
+.source-col-tag{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:var(--primary-bg);color:var(--primary);border-radius:var(--r-sm);font-size:12px;font-weight:500}
+.source-col-tag .sct-x{cursor:pointer;color:var(--text-4);font-size:14px;line-height:1}
+.source-col-tag .sct-x:hover{color:var(--danger)}
+.vm-section{margin-top:10px;border-top:1px dashed var(--border);padding-top:8px}
+.vm-section .vm-label{font-size:11px;color:var(--text-4);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.vm-row{display:flex;gap:4px;align-items:center;margin-bottom:4px;flex-wrap:wrap}
+.vm-row select,.vm-row input{padding:4px 8px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:11px;background:var(--surface);box-sizing:border-box}
+.vm-row input.vm-small{width:70px}
+.vm-row input.vm-med{width:90px}
+.vm-row select.vm-type{width:auto;min-width:80px}
+.vm-row .vm-del{width:22px;height:22px;border:none;border-radius:var(--r-sm);background:var(--danger-bg);color:var(--danger);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
+.vm-row .vm-del:hover{opacity:.8}
+.vm-add-btn{font-size:11px;padding:3px 10px;border:1px dashed var(--border);border-radius:var(--r-sm);background:transparent;color:var(--text-3);cursor:pointer;font-weight:600}
+.vm-add-btn:hover{border-color:var(--primary-l);color:var(--primary)}
+.shb-vm-block{margin-top:6px}
+.shb-vm-row{display:flex;gap:4px;align-items:center;font-size:11px;color:var(--text-3);margin-bottom:2px}
+.shb-vm-row .vm-arrow{color:var(--text-4)}
+.source-col-input{border:none;outline:none;flex:1;min-width:80px;font-size:12px;font-family:var(--font-body);background:transparent}
+.rule-add-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:10px;border:1.5px dashed var(--border);border-radius:var(--r-md);background:transparent;color:var(--text-3);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s}
+.rule-add-btn:hover{border-color:var(--primary-l);color:var(--primary);background:var(--primary-bg)}
+.rule-upload-area{border:1.5px dashed var(--border);border-radius:var(--r-md);padding:18px;text-align:center;cursor:pointer;transition:all .15s;margin-bottom:12px;background:var(--surface)}
+.rule-upload-area:hover{border-color:var(--primary-l);background:var(--primary-bg)}
+.rule-upload-area svg{width:28px;height:28px;color:var(--text-4);margin-bottom:6px}
+.rule-upload-area .rua-label{font-size:13px;font-weight:600;color:var(--text-2)}
+.rule-upload-area .rua-hint{font-size:11px;color:var(--text-4);margin-top:2px}
+.rule-sheet-selector{margin-bottom:12px}
+.rule-sheet-tab{padding:8px 16px;border:1.5px solid var(--border);border-radius:var(--r-sm);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;background:var(--surface);color:var(--text-3);display:inline-flex;align-items:center;gap:6px;margin:4px}
+.rule-sheet-tab:hover{border-color:var(--primary-l)}
+.rule-sheet-tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.rule-sheet-tab .rst-count{font-size:11px;opacity:.7;font-weight:400}
+
+/* ==================== Modal ==================== */
+.modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.4);backdrop-filter:blur(4px);z-index:999;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.show{display:flex;animation:fadeIn .2s}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.modal-box{background:var(--surface);border-radius:var(--r-xl);max-width:540px;width:100%;padding:32px;box-shadow:var(--shadow-xl);animation:modalIn .3s ease}
+@keyframes modalIn{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+.modal-box h3{font-family:var(--font-display);font-size:18px;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.modal-content{font-size:13px;color:var(--text-2);line-height:1.9}
+.modal-content p{margin-bottom:4px}
+
+/* ==================== Mobile ==================== */
+.mobile-toggle{display:none;background:none;border:none;cursor:pointer;color:var(--text)}
+.mobile-toggle svg{width:22px;height:22px}
+@media(max-width:768px){
+  .sidebar{transform:translateX(-100%)}
+  .sidebar.open{transform:translateX(0)}
+  .main{margin-left:0}
+  .mobile-toggle{display:block}
+  .content{padding:16px}
+  .topbar{padding:0 16px}
+  .progress{display:none}
+}
+
+/* User box in sidebar footer */
+.user-box{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--muted);border-radius:var(--r-sm);margin-bottom:12px}
+.user-avatar{width:34px;height:34px;border-radius:8px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;font-family:var(--font-display);flex-shrink:0}
+.user-info{flex:1;min-width:0}
+.user-name{font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.user-role{font-size:11px;color:var(--text-4)}
+.btn-logout{flex-shrink:0;background:none;border:1px solid var(--border);border-radius:6px;padding:7px;cursor:pointer;color:var(--text-3);transition:all .2s;display:flex;align-items:center;justify-content:center}
+.btn-logout:hover{background:var(--danger-bg);border-color:var(--danger);color:var(--danger)}
+.btn-logout svg{width:16px;height:16px}
+
+</style>
+</head>
+<body>
+
+<!-- SVG Icon Sprite -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></symbol>
+  <symbol id="i-database" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></symbol>
+  <symbol id="i-log-out" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
+  <symbol id="i-user-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="8" r="3"/><path d="M6 20c0-3 3-4 6-4s6 1 6 4"/></symbol>
+</svg>
+
+<div class="app">
+  <!-- ===== Sidebar ===== -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="logo">
+        <svg><use href="#i-database"/></svg>
+      </div>
+      <div>
+        <div class="name">数据合并平台</div>
+        <div class="sub">Excel Merger & Filter</div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">
+        <div class="nav-section-title">功能</div>
+        <div class="nav-item active" onclick="goStep(1)"><svg><use href="#i-upload"/></svg> 文件合并</div>
+        <div class="nav-item" onclick="openRuleManager()"><svg><use href="#i-layers"/></svg> 规则管理</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">帮助</div>
+        <div class="nav-item" onclick="showHelp()"><svg><use href="#i-help"/></svg> 使用说明</div>
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-box" id="userBox" style="display:none">
+        <div class="user-avatar" id="userAvatar"></div>
+        <div class="user-info">
+          <div class="user-name" id="userName">用户</div>
+          <div class="user-role" id="userRole">角色</div>
+        </div>
+        <button class="btn-logout" onclick="doLogout()" title="退出登录">
+          <svg><use href="#i-log-out"/></svg>
+        </button>
+      </div>
+      <div class="status"><span class="dot"></span>服务运行中</div>
+      <div>v1.0 · Powered by FastAPI</div>
+    </div>
+  </aside>
+
+  <!-- ===== Main ===== -->
+  <div class="main">
+    <header class="topbar">
+      <button class="mobile-toggle" onclick="toggleSidebar()"><svg><use href="#i-menu"/></svg></button>
+      <div>
+        <div class="topbar-title" id="topbarTitle">上传文件</div>
+        <div class="topbar-subtitle" id="topbarSub">Step 1 — 上传 Excel 文件开始处理</div>
+      </div>
+      <div class="topbar-spacer"></div>
+      <div class="progress">
+        <div class="pg-item"><div class="pg-circle active" id="sd1">1</div><div class="pg-label active" id="sl1">上传</div></div>
+        <div class="pg-line" id="sline1"></div>
+        <div class="pg-item"><div class="pg-circle" id="sd2">2</div><div class="pg-label" id="sl2">纠正</div></div>
+        <div class="pg-line" id="sline2"></div>
+        <div class="pg-item"><div class="pg-circle" id="sd3">3</div><div class="pg-label" id="sl3">结果</div></div>
+      </div>
+    </header>
+
+    <div class="content">
+      <div class="content-inner">
+
+        <!-- ===== Step 1 ===== -->
+        <div class="step-panel on" id="step1">
+          <div class="card card-pad">
+            <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+              <div class="dz-icon"><svg><use href="#i-upload"/></svg></div>
+              <div class="dz-label">点击或拖拽 Excel 文件到此处</div>
+              <div class="dz-hint">支持 .xlsx 格式 · 可多选 · 上传后选择规则或手动匹配列名</div>
+            </div>
+            <input type="file" id="fileInput" multiple accept=".xlsx,.xls">
+            <div class="file-chips" id="fileChips"></div>
+            <div style="margin-top:20px">
+              <button class="btn btn-primary btn-lg btn-block" id="btnAnalyze" disabled onclick="analyzeFiles()">
+                <svg><use href="#i-search"/></svg> 分析表头
+              </button>
+            </div>
+          </div>
+
+          <div class="bento">
+            <div class="bento-item">
+              <div class="bi-icon"><svg><use href="#i-layers"/></svg></div>
+              <div class="bi-title">规则匹配</div>
+              <div class="bi-desc">预先在规则管理中定义标准列名，上传后一键自动匹配</div>
+            </div>
+            <div class="bento-item">
+              <div class="bi-icon"><svg><use href="#i-edit"/></svg></div>
+              <div class="bi-title">手动匹配</div>
+              <div class="bi-desc">直接编辑列名，名称相同的列自动对齐合并</div>
+            </div>
+            <div class="bento-item">
+              <div class="bi-icon"><svg><use href="#i-map"/></svg></div>
+              <div class="bi-title">省份筛选</div>
+              <div class="bi-desc">全国省市县三级关键词匹配，支持多省</div>
+            </div>
+            <div class="bento-item" style="cursor:pointer" onclick="openRuleManager()">
+              <div class="bi-icon"><svg><use href="#i-layers"/></svg></div>
+              <div class="bi-title">先配规则（推荐）</div>
+              <div class="bi-desc">点击去规则管理定义标准列名，上传后一键匹配</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== Step 2 ===== -->
+        <div class="step-panel" id="step2">
+          <div class="card card-pad" style="margin-bottom:16px;background:var(--primary-bg);border:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:10px">
+              <svg style="width:20px;height:20px;color:var(--primary);flex-shrink:0"><use href="#i-help"/></svg>
+              <div style="font-size:13px;color:var(--text-2);line-height:1.6">
+                <strong style="color:var(--primary)">操作步骤：</strong>
+                ① 选择规则点「自动匹配」自动对齐列名（可选） → ② 手动微调列名（可选） → ③ 勾选要合并的 Sheet → ④ 可选：按省份筛选 → ⑤ 点「开始合并」
+              </div>
+            </div>
+          </div>
+          <div class="card prov-card" id="provCard" style="display:none">
+            <div class="card-head">
+              <div class="ch-icon"><svg><use href="#i-map"/></svg></div>
+              <span class="ch-title">按省份筛选</span>
+              <span class="ch-sub">可选 · 不选则导出全部数据</span>
+              <div class="ch-spacer"></div>
+              <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="selectAllProv()">全选</button>
+              <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="clearProv()">清空</button>
+            </div>
+            <div class="card-pad" style="padding-top:16px">
+              <div class="prov-search-wrap">
+                <svg><use href="#i-search"/></svg>
+                <input type="text" class="prov-search" id="provSearch" placeholder="搜索省份..." oninput="filterProv()">
+              </div>
+              <div class="prov-tags" id="provTags"></div>
+              <div class="prov-bar" id="provBar">已选择 <strong>0</strong> 个省份</div>
+            </div>
+          </div>
+
+          <div class="rule-selector" id="ruleSelector" style="display:none">
+            <div class="rs-label"><svg><use href="#i-layers"/></svg> 选择规则</div>
+            <select id="ruleSelect">
+              <option value="">-- 选择规则 --</option>
+            </select>
+            <button class="btn btn-primary rs-btn" onclick="applyRuleToSheets()">自动匹配</button>
+            <button class="btn btn-ghost rs-btn" onclick="clearRuleMapping()">清除映射</button>
+          </div>
+
+          <div class="card-head" style="padding-left:0;padding-right:0">
+            <div class="ch-icon"><svg><use href="#i-edit"/></svg></div>
+            <span class="ch-title">预览数据与匹配列名</span>
+            <span class="ch-sub" id="sheetCount">0 个 Sheet</span>
+          </div>
+          <p style="font-size:12px;color:var(--text-4);margin-bottom:16px">
+            勾选要合并的 Sheet，点击列名可编辑。<span style="color:var(--amber)">黄色</span> = 已修改。列名相同的会自动合并到一起。不选规则也可以直接手动编辑列名。
+          </p>
+          <div id="sheetTables"></div>
+        </div>
+
+        <!-- ===== Step 3 ===== -->
+        <div class="step-panel" id="step3">
+          <div class="stats" id="statsGrid"></div>
+          <div id="previewSection"></div>
+        </div>
+
+        <!-- ===== Rules Page ===== -->
+        <div class="step-panel" id="stepRules">
+          <div class="rule-page-head">
+            <div>
+              <h2><svg><use href="#i-layers"/></svg> 规则管理</h2>
+              <div class="rph-sub">规则用来把不同 Excel 中不同叫法的列统一成一个名字，上传时一键自动匹配</div>
+            </div>
+            <button class="btn btn-primary" onclick="showRuleForm()"><svg style="width:16px;height:16px"><use href="#i-edit"/></svg> 新建规则</button>
+          </div>
+          <div id="rulesContainer"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="sticky-bar" id="stickyBar" style="display:none">
+      <button class="btn btn-ghost" onclick="goStep(1)">← 重新上传</button>
+      <button class="btn btn-primary" style="flex:1" onclick="processMerge()"><svg><use href="#i-zap"/></svg> 开始合并</button>
+    </div>
+    <div class="sticky-bar" id="stickyBar3" style="display:none">
+      <button class="btn btn-ghost" onclick="goStep(2)">← 重新选择</button>
+      <button class="btn btn-accent" style="flex:1" onclick="window.location.href='/api/download'"><svg><use href="#i-download"/></svg> 下载 Excel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Loading -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-box">
+    <div class="spinner"></div>
+    <p id="loadingText">正在处理中...</p>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Help Modal -->
+<div class="modal-overlay" id="helpModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal-box">
+    <h3>使用说明</h3>
+    <div class="modal-content">
+      <p><strong style="color:var(--primary)">1. 规则管理（可选，但推荐先配好）</strong></p>
+      <p style="padding-left:12px">• 侧边栏「规则管理」→ 新建规则</p>
+      <p style="padding-left:12px">• 定义「目标列名」，以及它能匹配的 Excel 中的列名</p>
+      <p style="padding-left:12px">• 例如：目标列名「客户名称」可匹配「客户名称、Customer Name、客户」</p>
+      <p style="padding-left:12px">• 也可以直接上传一个标准 Excel，自动读取列名</p>
+      <p><strong style="color:var(--primary)">2. 上传文件</strong></p>
+      <p style="padding-left:12px">• 上传多个 Excel，系统自动读取所有 Sheet 的列名和数据</p>
+      <p><strong style="color:var(--primary)">3. 匹配与合并</strong></p>
+      <p style="padding-left:12px">• 选择规则后点「自动匹配」，列名会按规则自动对齐</p>
+      <p style="padding-left:12px">• 也可以点击列名手动编辑（黄色 = 已修改）</p>
+      <p style="padding-left:12px">• 勾选要合并的 Sheet，可选是否按省份筛选</p>
+      <p><strong style="color:var(--primary)">4. 查看结果</strong></p>
+      <p style="padding-left:12px">• 查看合并统计、预览数据、下载 Excel</p>
+    </div>
+    <button class="btn btn-primary btn-block" style="margin-top:20px" onclick="document.getElementById('helpModal').classList.remove('show')">知道了</button>
+  </div>
+</div>
+
+<script>
+let selectedFiles=[],analyzeData=null,sheetStates={},selectedProvinces=new Set();
+const GROUP_COLORS=[
+  {bg:'var(--primary-bg)',text:'var(--primary)'},{bg:'var(--accent-bg)',text:'var(--accent-d)'},
+  {bg:'var(--amber-bg)',text:'var(--amber)'},{bg:'var(--purple-bg)',text:'var(--purple)'},
+  {bg:'#EFF6FF',text:'var(--secondary)'},{bg:'#FDF2F8',text:'#DB2777'},
+];
+
+function esc(s){if(s===null||s===undefined)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+let _idMap={},_idCounter=0;
+function safeId(s){if(!(s in _idMap)){_idMap[s]='k'+(++_idCounter)}return _idMap[s]}
+function unscId(s){for(let k in _idMap){if(_idMap[k]===s)return k}return s}
+function toast(msg,type){const t=document.getElementById('toast');const icon=type==='error'?'<svg><use href="#i-alert"/></svg>':'<svg><use href="#i-check"/></svg>';t.innerHTML=icon+msg;t.className='toast show '+(type||'success');setTimeout(()=>t.classList.remove('show'),3000)}
+function showLoading(text){document.getElementById('loadingText').textContent=text||'处理中...';document.getElementById('loadingOverlay').classList.add('show')}
+function hideLoading(){document.getElementById('loadingOverlay').classList.remove('show')}
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open')}
+function showHelp(){document.getElementById('helpModal').classList.add('show')}
+
+const STEP_TITLES=[
+  {title:'上传文件',sub:'上传 Excel 文件，系统自动读取所有 Sheet'},
+  {title:'匹配与合并',sub:'选择规则自动匹配列名，或手动编辑，然后合并'},
+  {title:'查看结果',sub:'查看合并结果，筛选数据，下载 Excel'},
+];
+function showStep(n){
+  [1,2,3].forEach(i=>document.getElementById('step'+i).classList.toggle('on',i===n));
+  document.getElementById('stepRules').classList.toggle('on',n==='rules');
+  const isRules=n==='rules';
+  const progress=document.querySelector('.progress');
+  if(progress)progress.style.visibility=isRules?'hidden':'visible';
+  if(isRules){
+    document.getElementById('topbarTitle').textContent='规则管理';
+    document.getElementById('topbarSub').textContent='管理目标列名规则';
+    document.querySelectorAll('.nav-item').forEach(item=>item.classList.remove('active'));
+    document.querySelector('.nav-item[onclick="openRuleManager()"]')?.classList.add('active');
+  }else{
+    [1,2,3].forEach(i=>{const d=document.getElementById('sd'+i),l=document.getElementById('sl'+i);d.className='pg-circle'+(i<n?' done':i===n?' active':'');l.className='pg-label'+(i<n?' done':i===n?' active':'')});
+    document.getElementById('sline1').className='pg-line'+(n>1?' done':'');
+    document.getElementById('sline2').className='pg-line'+(n>2?' done':'');
+    const t=STEP_TITLES[n-1];
+    document.getElementById('topbarTitle').textContent=t.title;
+    document.getElementById('topbarSub').textContent=t.sub;
+    document.querySelectorAll('.nav-item').forEach(item=>item.classList.remove('active'));
+    document.querySelector('.nav-item[onclick="goStep(1)"]')?.classList.add('active');
+  }
+  document.getElementById('stickyBar').style.display=n===2?'flex':'none';
+  document.getElementById('stickyBar3').style.display=n===3?'flex':'none';
+}
+function goStep(n){
+  if(n===2&&!analyzeData){toast('请先上传并分析文件','error');return}
+  if(n===3&&!document.getElementById('statsGrid').innerHTML){toast('请先完成合并筛选','error');return}
+  showStep(n);
+}
+function resetAll(){
+  selectedFiles=[];analyzeData=null;sheetStates={};
+  renderFileChips();showStep(1);
+  document.getElementById('statsGrid').innerHTML='';
+  document.getElementById('previewSection').innerHTML='';
+  document.getElementById('provCard').style.display='none';
+  const rs=document.getElementById('ruleSelector');if(rs)rs.style.display='none';
+  toast('已重置');
+}
+
+// Upload
+const dropzone=document.getElementById('dropzone');
+const fileInput=document.getElementById('fileInput');
+fileInput.addEventListener('change',e=>handleFiles(e.target.files));
+dropzone.addEventListener('dragover',e=>{e.preventDefault();dropzone.classList.add('dragover')});
+dropzone.addEventListener('dragleave',()=>dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop',e=>{e.preventDefault();dropzone.classList.remove('dragover');handleFiles(e.dataTransfer.files)});
+function handleFiles(files){for(let f of files){if(/\.(xlsx|xls)$/i.test(f.name)&&!selectedFiles.some(sf=>sf.name===f.name))selectedFiles.push(f)}renderFileChips()}
+function renderFileChips(){
+  const c=document.getElementById('fileChips');c.innerHTML='';
+  selectedFiles.forEach((f,idx)=>{
+    const chip=document.createElement('div');chip.className='file-chip';
+    chip.innerHTML=`<span class="fc-icon"><svg><use href="#i-file"/></svg></span><span class="fc-name">${esc(f.name)}</span><span class="fc-size">${(f.size/1024).toFixed(0)}KB</span><span class="fc-x" onclick="removeFile(${idx})"><svg><use href="#i-x"/></svg></span>`;
+    c.appendChild(chip);
+  });
+  document.getElementById('btnAnalyze').disabled=selectedFiles.length===0;
+}
+function removeFile(idx){selectedFiles.splice(idx,1);renderFileChips()}
+
+// Analyze
+async function analyzeFiles(){
+  if(selectedFiles.length===0)return;
+  document.getElementById('btnAnalyze').disabled=true;
+  showLoading('正在分析表头...');
+  const fd=new FormData();
+  selectedFiles.forEach(f=>fd.append('files',f));
+  try{
+    const resp=await fetch('/api/analyze',{method:'POST',body:fd});
+    const data=await resp.json();
+    if(data.status==='success'){
+      analyzeData=data;initSheetStates(data);renderSheetTables(data);
+      if(data.regions)renderProvTags(data.regions);
+      rulesData=data.rules||[];
+      populateRuleSelector(data.rules);
+      document.getElementById('provCard').style.display='block';
+      showStep(2);
+      // 如果有规则，自动选中第一个并应用
+      if(rulesData.length>0){
+        document.getElementById('ruleSelect').value=rulesData[0].id;
+        applyRuleToSheets();
+      }else{
+        toast(`已读取 ${data.sheets.length} 个 Sheet`);
+      }
+    }else{toast('分析失败: '+(data.detail||'未知错误'),'error')}
+  }catch(err){toast('请求出错: '+err.message,'error')}
+  finally{hideLoading();document.getElementById('btnAnalyze').disabled=false}
+}
+function initSheetStates(data){
+  sheetStates={};
+  // 找到最相关的 Sheet：优先有"街道"列且行数最多的，否则行数最多的
+  let bestKey=null,bestScore=-1;
+  data.sheets.forEach(s=>{
+    const key=`${s.filename}::${s.sheet_name}`;
+    const hasStreet=s.headers.some(h=>h.includes('街道')&&!h.includes('街道2')&&!h.includes('街道 3'));
+    const score=(hasStreet?1000:0)+s.row_count;
+    if(score>bestScore){bestScore=score;bestKey=key}
+    sheetStates[key]={selected:false,headers:[...s.headers],originalHeaders:[...s.headers],row_count:s.row_count,sample_rows:s.sample_rows||[],filename:s.filename,sheet_name:s.sheet_name,group_id:null};
+  });
+  // 只默认选中最佳 Sheet
+  if(bestKey&&sheetStates[bestKey])sheetStates[bestKey].selected=true;
+  data.auto_groups.forEach(g=>g.sheets.forEach(s=>{if(sheetStates[s])sheetStates[s].group_id=g.group_id}));
+}
+
+// Render Sheet Tables
+function renderSheetTables(data){
+  const container=document.getElementById('sheetTables');
+  document.getElementById('sheetCount').textContent=`${data.sheets.length} 个 Sheet`;
+  const fileGroups={};
+  data.sheets.forEach(s=>{if(!fileGroups[s.filename])fileGroups[s.filename]=[];fileGroups[s.filename].push(s)});
+  let html='';
+  Object.entries(fileGroups).forEach(([fname,sheets])=>{
+    const sf=safeId(fname);
+    const hasSel=sheets.some(s=>sheetStates[`${s.filename}::${s.sheet_name}`].selected);
+    const totalRows=sheets.reduce((sum,s)=>sum+s.row_count,0);
+    const gids=new Set();
+    sheets.forEach(s=>{const st=sheetStates[`${s.filename}::${s.sheet_name}`];if(st.group_id)gids.add(st.group_id)});
+    html+=`<div class="file-card ${hasSel?'on':''}" id="file-${sf}">`;
+    html+=`<div class="fc-head"><div class="fc-file-icon"><svg><use href="#i-file"/></svg></div><div><div class="fc-name">${esc(fname)}</div><div class="fc-meta">${sheets.length} 个 Sheet · ${totalRows} 行</div></div><div class="fc-badges">`;
+    html+=`<span class="badge badge-primary" id="sel-${sf}">${sheets.filter(s=>sheetStates[`${s.filename}::${s.sheet_name}`].selected).length}/${sheets.length} 选中</span>`;
+    gids.forEach(gid=>{const gc=GROUP_COLORS[(gid-1)%GROUP_COLORS.length];html+=`<span class="badge" style="background:${gc.bg};color:${gc.text}">分组 ${gid}</span>`});
+    html+=`<span class="badge badge-amber badge-hidden" id="mod-${sf}">已修改 0 列</span></div></div>`;
+    // Tabs
+    html+=`<div class="tabs">`;
+    sheets.forEach((s,si)=>{
+      const key=`${s.filename}::${s.sheet_name}`;const st=sheetStates[key];const sk=safeId(key);
+      const mc=st.headers.filter((h,i)=>h!==st.originalHeaders[i]).length;
+      html+=`<div class="tab ${si===0?'on':''}" data-file="${sf}" data-key="${sk}" onclick="switchTab('${sf}','${sk}')">`;
+      html+=`<div class="tab-cb ${st.selected?'on':''}" id="cb-${sk}" onclick="event.stopPropagation();toggleSel('${sk}','${sf}')"><svg><use href="#i-check"/></svg></div>`;
+      html+=`<span>${esc(s.sheet_name)}</span><span class="tab-count">${st.row_count}</span>`;
+      html+=`<span class="tab-dot ${mc>0?'':'hide'}" id="td-${sk}"></span></div>`;
+    });
+    html+=`</div>`;
+    // Panels
+    sheets.forEach((s,si)=>{
+      const key=`${s.filename}::${s.sheet_name}`;const st=sheetStates[key];const sk=safeId(key);
+      html+=`<div class="panel ${si===0?'on':''}" id="panel-${sk}"><div class="panel-body">`;
+      html+=`<table class="etbl"><thead><tr>`;
+      s.headers.forEach((h,i)=>{
+        const mod=st.headers[i]!==st.originalHeaders[i];
+        html+=`<th><div class="cn">${i+1}</div>`;
+        html+=`<input type="text" class="${mod?'mod':''}" value="${esc(st.headers[i])}" oninput="onEdit(this,'${sk}',${i},'${sf}')" list="cols-${sk}" />`;
+        html+=`<div class="on ${mod?'show':''}" id="orig-${sk}-${i}">${esc(st.originalHeaders[i])}</div></th>`;
+      });
+      html+=`</tr></thead><tbody>`;
+      (st.sample_rows||[]).forEach(row=>{html+=`<tr>`;s.headers.forEach((_,i)=>{html+=`<td title="${esc(row[i]||'')}">${esc(row[i]||'')}</td>`});html+=`</tr>`});
+      html+=`</tbody></table>`;
+      html+=`<datalist id="cols-${sk}">${data.all_columns.map(c=>`<option value="${esc(c)}">`).join('')}</datalist>`;
+      html+=`</div></div>`;
+    });
+    html+=`</div>`;
+  });
+  container.innerHTML=html;
+}
+
+function switchTab(sf,sk){
+  document.querySelectorAll(`.tab[data-file="${sf}"]`).forEach(t=>t.classList.remove('on'));
+  document.querySelector(`.tab[data-key="${sk}"]`).classList.add('on');
+  document.querySelectorAll(`#file-${sf} .panel`).forEach(p=>p.classList.remove('on'));
+  document.getElementById(`panel-${sk}`).classList.add('on');
+}
+function toggleSel(sk,sf){
+  const key=unscId(sk);const st=sheetStates[key];if(!st)return;
+  st.selected=!st.selected;
+  document.getElementById(`cb-${sk}`).classList.toggle('on',st.selected);
+  const card=document.getElementById(`file-${sf}`);
+  const anySel=Object.values(sheetStates).filter(s=>s.filename===unscId(sf)).some(s=>s.selected);
+  card.classList.toggle('on',anySel);
+  const sheets=Object.values(sheetStates).filter(s=>s.filename===unscId(sf));
+  const selCount=sheets.filter(s=>s.selected).length;
+  document.getElementById(`sel-${sf}`).textContent=`${selCount}/${sheets.length} 选中`;
+}
+function onEdit(input,sk,idx,sf){
+  const key=unscId(sk);const st=sheetStates[key];if(!st)return;
+  const val=input.value.trim();st.headers[idx]=val;
+  const mod=val!==st.originalHeaders[idx];
+  input.classList.toggle('mod',mod);
+  const origEl=document.getElementById(`orig-${sk}-${idx}`);if(origEl)origEl.classList.toggle('show',mod);
+  const mc=st.headers.filter((h,i)=>h!==st.originalHeaders[i]).length;
+  const dot=document.getElementById(`td-${sk}`);if(dot)dot.classList.toggle('hide',mc===0);
+  let totalMod=0;
+  Object.values(sheetStates).forEach(s=>{if(s.filename===unscId(sf))totalMod+=s.headers.filter((h,i)=>h!==s.originalHeaders[i]).length});
+  const modBadge=document.getElementById(`mod-${sf}`);if(modBadge){modBadge.textContent=`已修改 ${totalMod} 列`;modBadge.classList.toggle('badge-hidden',totalMod===0)}
+}
+
+// Province Selector
+function renderProvTags(regions){
+  const c=document.getElementById('provTags');c.innerHTML='';
+  regions.forEach(r=>{
+    const tag=document.createElement('div');
+    tag.className='prov-tag'+(selectedProvinces.has(r.name)?' on':'');
+    tag.dataset.name=r.name;tag.textContent=r.name;tag.onclick=()=>toggleProv(r.name);
+    c.appendChild(tag);
+  });
+  updateProvBar();
+}
+function toggleProv(name){
+  if(selectedProvinces.has(name))selectedProvinces.delete(name);else selectedProvinces.add(name);
+  const tag=document.querySelector(`.prov-tag[data-name="${name}"]`);if(tag)tag.classList.toggle('on',selectedProvinces.has(name));
+  updateProvBar();
+}
+function updateProvBar(){
+  document.getElementById('provBar').innerHTML=`已选择 <strong>${selectedProvinces.size}</strong> 个省份`+(selectedProvinces.size>0?`：${[...selectedProvinces].join('、')}`:'');
+}
+function selectAllProv(){document.querySelectorAll('.prov-tag').forEach(t=>{if(t.style.display!=='none'){selectedProvinces.add(t.dataset.name);t.classList.add('on')}});updateProvBar()}
+function clearProv(){selectedProvinces.clear();document.querySelectorAll('.prov-tag').forEach(t=>t.classList.remove('on'));updateProvBar()}
+function filterProv(){const q=document.getElementById('provSearch').value.trim().toLowerCase();document.querySelectorAll('.prov-tag').forEach(t=>{t.style.display=!q||t.dataset.name.toLowerCase().includes(q)?'':'none'})}
+
+// Merge & Filter
+async function processMerge(){
+  const selected=[];const mappings={};
+  Object.keys(sheetStates).forEach(key=>{
+    if(sheetStates[key].selected){
+      selected.push(key);const st=sheetStates[key];const mod={};
+      st.headers.forEach((h,i)=>{if(h!==st.originalHeaders[i]&&st.originalHeaders[i])mod[st.originalHeaders[i]]=h});
+      if(Object.keys(mod).length>0)mappings[key]=mod;
+    }
+  });
+  if(selected.length===0){toast('请至少勾选一个 Sheet','error');return}
+    showLoading('正在合并数据...');
+  const fd=new FormData();
+  fd.append('session_id',analyzeData.session_id);
+  fd.append('mappings',JSON.stringify(mappings));
+  fd.append('selected_sheets',JSON.stringify(selected));
+  fd.append('provinces',JSON.stringify([...selectedProvinces]));
+  const ruleId=document.getElementById('ruleSelect')?document.getElementById('ruleSelect').value:'';
+  if(ruleId)fd.append('rule_id',ruleId);
+  try{
+    const resp=await fetch('/api/process',{method:'POST',body:fd});
+    const data=await resp.json();
+    if(data.status==='success'){renderResult(data.stats,data.previews);showStep(3);const action = data.stats.provinces && data.stats.provinces.length > 0 ? '筛选' : '合并'; toast(`${action}完成，共 ${data.stats.filtered_rows} 行`)}
+    else{toast('处理失败: '+(data.detail||'未知错误'),'error')}
+  }catch(err){toast('请求出错: '+err.message,'error')}
+  finally{hideLoading()}
+}
+
+function renderResult(stats,previews){
+  document.getElementById('statsGrid').innerHTML=`
+    <div class="stat"><div class="stat-label">选中Sheet</div><div class="stat-value">${stats.selected_sheets}</div><div class="stat-desc">个参与合并</div></div>
+    <div class="stat accent"><div class="stat-label">合并行数</div><div class="stat-value">${stats.total_merged_rows}</div><div class="stat-desc">行数据</div></div>
+    <div class="stat amber"><div class="stat-label">合并列数</div><div class="stat-value">${stats.total_columns}</div><div class="stat-desc">列</div></div>
+    <div class="stat purple"><div class="stat-label">${stats.provinces&&stats.provinces.length>0?'筛选结果':'合并结果'}</div><div class="stat-value">${stats.filtered_rows}</div><div class="stat-desc">${stats.provinces&&stats.provinces.length>0?esc(stats.provinces.join('、')):'全部数据'}</div></div>
+    <div class="stat green"><div class="stat-label">输出Sheet</div><div class="stat-value">${stats.sheet_count||1}</div><div class="stat-desc">个Sheet</div></div>
+  `;
+  const sec=document.getElementById('previewSection');
+  if(!previews||previews.length===0){sec.innerHTML=`<div class="card"><div class="empty"><svg><use href="#i-search"/></svg><div>未筛选到匹配数据</div></div></div>`;return}
+  let html='';
+  previews.forEach(pv=>{
+    html+=`<div class="result-card">`;
+    html+=`<div class="result-head"><div class="rh-title"><span class="dot"></span>${esc(pv.sheet_name||'数据预览')}</div><span class="badge badge-accent">${pv.total} 行</span></div>`;
+    html+=`<div class="result-body"><table class="rtbl"><thead><tr>`;
+    pv.headers.forEach(h=>html+=`<th>${esc(h)}</th>`);
+    html+=`</tr></thead><tbody>`;
+    pv.rows.forEach(row=>{html+=`<tr>`;row.forEach(c=>html+=`<td title="${esc(c)}">${esc(c)}</td>`);html+=`</tr>`});
+    html+=`</tbody></table></div>`;
+    if(pv.total>pv.preview_count)html+=`<div class="result-note">显示前 ${pv.preview_count} 行，共 ${pv.total} 行，完整数据请下载 Excel</div>`;
+    html+=`</div>`;
+  });
+  sec.innerHTML=html;
+}
+
+// ==================== Rule Management ====================
+let rulesData=[];
+let editingRuleId=null;
+
+async function openRuleManager(){
+  showStep('rules');
+  await loadRulesData();
+}
+function closeRuleManager(){
+  showStep(1);
+  editingRuleId=null;
+}
+async function loadRulesData(){
+  try{
+    const resp=await fetch('/api/rules');
+    const data=await resp.json();
+    if(data.status==='success'){rulesData=data.rules;renderRuleList()}
+  }catch(e){toast('加载规则失败','error')}
+}
+function renderRuleList(){
+  const container=document.getElementById('rulesContainer');
+  if(!container)return;
+  if(rulesData.length===0){
+    container.innerHTML='<div class="rule-empty-page"><svg><use href="#i-layers"/></svg>'+
+      '<div class="rep-title">还没有规则</div>'+
+      '<div class="rep-desc">规则用来把不同 Excel 中不同叫法的列统一成一个名字</div>'+
+      '<div style="margin-top:20px;padding:16px 20px;background:var(--muted);border-radius:var(--r-md);text-align:left;max-width:480px">'+
+      '<div style="font-size:12px;font-weight:600;color:var(--text-3);margin-bottom:8px">示例</div>'+
+      '<div style="font-size:13px;color:var(--text-2);line-height:1.8">'+
+      '规则名称：联合利华标准模板<br>'+
+      '目标列名「客户名称」← 可匹配源列名：客户名称、Customer Name、客户<br>'+
+      '目标列名「街道」← 可匹配源列名：街道、街道地址、Address</div></div></div>';
+    return;
+  }
+  let html='';
+  rulesData.forEach((r,ri)=>{
+    const colCount=r.standard_headers.length;
+    const isExpanded=ri===0;
+    html+='<div class="rule-card'+(isExpanded?' expanded':'')+'" id="rcard-'+r.id+'">';
+    html+='<div class="rule-card-head" onclick="toggleRuleCard(\''+r.id+'\')">';
+    html+='<div class="rch-left"><div class="rch-icon"><svg><use href="#i-layers"/></svg></div>';
+    html+='<div><div class="rch-name">'+esc(r.name)+'</div>';
+    html+='<div class="rch-meta">'+colCount+' 个目标列名 · 更新于 '+esc(r.updated_at||'')+'</div></div></div>';
+    html+='<div class="rch-actions">';
+    html+='<button class="rca-btn" onclick="event.stopPropagation();showRuleForm(\''+r.id+'\')" title="编辑"><svg><use href="#i-edit"/></svg></button>';
+    html+='<button class="rca-btn danger" onclick="event.stopPropagation();deleteRule(\''+r.id+'\')" title="删除"><svg><use href="#i-x"/></svg></button>';
+    html+='<div class="rch-chevron"><svg style="width:18px;height:18px"><use href="#i-chevron-right"/></svg></div>';
+    html+='</div></div>';
+    html+='<div class="rule-card-body">';
+    r.standard_headers.forEach((sh,si)=>{
+      html+='<div class="std-header-block">';
+      html+='<div class="shb-head"><div class="shb-num">'+(si+1)+'</div><div class="shb-name">'+esc(sh.name)+'</div></div>';
+      html+='<div class="shb-cols">';
+      (sh.source_columns||[]).forEach(sc=>{html+='<span class="shb-col-tag">'+esc(sc)+'</span>'});
+      if(!sh.source_columns||sh.source_columns.length===0){html+='<span style="font-size:12px;color:var(--text-4)">未设置匹配列名</span>'}
+      html+='</div>';
+      if(sh.value_mappings&&sh.value_mappings.length>0){
+        html+='<div class="shb-vm-block">';
+        sh.value_mappings.forEach(vm=>{
+          if(vm.source_file_contains){
+            html+='<div class="shb-vm-row"><span>📁 包含「'+esc(vm.source_file_contains)+'」</span>'+
+              '<span>值「'+esc(vm.source_value)+'」</span><span class="vm-arrow">→</span>'+
+              '<span style="color:var(--primary);font-weight:600">「'+esc(vm.target_value)+'」</span></div>';
+          }else if(vm.when_column){
+            html+='<div class="shb-vm-row"><span>当「'+esc(vm.when_column)+'」=「'+esc(vm.equals)+'」</span>'+
+              '<span class="vm-arrow">→</span><span style="color:var(--primary);font-weight:600">用「'+esc(vm.use_column)+'」列的值</span></div>';
+          }
+        });
+        html+='</div>';
+      }
+      html+='</div>';
+    });
+    html+='</div></div>';
+  });
+  container.innerHTML=html;
+}
+function toggleRuleCard(ruleId){
+  const card=document.getElementById('rcard-'+ruleId);
+  if(card)card.classList.toggle('expanded');
+}
+function showRuleForm(ruleId){
+  editingRuleId=ruleId||null;
+  let rule=null;
+  if(ruleId){
+    rule=rulesData.find(r=>r.id===ruleId);
+    if(!rule)return;
+  }
+  const container=document.getElementById('rulesContainer');
+  const name=rule?rule.name:'';
+  const headers=rule?rule.standard_headers:[{name:'',source_columns:[],value_mappings:[]}];
+  container.innerHTML=renderRuleFormHTML(name,headers);
+}
+function renderRuleFormHTML(name,headers){
+  let html='';
+  html='<div class="rule-form-wrap"><div class="rfw-head"><h3><svg style="width:18px;height:18px"><use href="#i-edit"/></svg> '+(editingRuleId?'编辑规则':'新建规则')+'</h3></div>';
+  html+='<div class="rule-form-group"><label class="rule-form-label">规则名称</label>'+
+    '<input type="text" class="rule-form-input" id="ruleFormName" value="'+esc(name)+'" placeholder="例如：联合利华标准模板"></div>';
+  // Upload area
+  html+='<div class="rule-form-group">'+
+    '<label class="rule-form-label">上传 Excel 自动填充（可选）</label>'+
+    '<div class="rule-upload-area" id="ruleUploadArea" onclick="document.getElementById(\'ruleFileInput\').click()">'+
+    '<svg><use href="#i-upload"/></svg>'+
+    '<div class="rua-label">点击上传 Excel 文件</div>'+
+    '<div class="rua-hint">上传一个标准 Excel，自动读取列名作为目标列名</div></div>'+
+    '<input type="file" id="ruleFileInput" accept=".xlsx,.xls" style="display:none" onchange="onRuleFileUpload(this)">';
+  html+='<div id="ruleSheetSelector" style="display:none"></div>';
+  html+='</div>';
+  // Standard headers
+  html+='<div class="rule-form-group"><label class="rule-form-label">目标列名</label><div id="stdHeaderList">';
+  headers.forEach((h,i)=>{
+    html+=renderStdHeaderRow(i,h.name||'',h.source_columns||[],h.value_mappings||[]);
+  });
+  html+='</div><button class="rule-add-btn" onclick="addStdHeaderRow()"><svg style="width:14px;height:14px"><use href="#i-edit"/></svg> 添加目标列名</button></div>';
+  html+='<div style="display:flex;gap:10px;margin-top:20px">'+
+    '<button class="btn btn-ghost" style="flex:1" onclick="loadRulesData()">返回列表</button>'+
+    '<button class="btn btn-primary" style="flex:1" onclick="saveRuleForm()">'+(editingRuleId?'更新规则':'创建规则')+'</button></div></div>';
+  return html;
+}
+function renderStdHeaderRow(idx,name,sourceCols,valueMappings){
+  let tagsHtml='';
+  sourceCols.forEach((sc,sci)=>{
+    tagsHtml+='<span class="source-col-tag">'+esc(sc)+'<span class="sct-x" onclick="removeSourceCol('+idx+','+sci+')">×</span></span>';
+  });
+  let vmHtml='';
+  if(valueMappings&&valueMappings.length>0){
+    valueMappings.forEach((vm,vi)=>{
+      vmHtml+=renderVmRow(idx,vi,vm);
+    });
+  }
+  return '<div class="std-header-row" id="shr-'+idx+'">'+
+    '<div class="shr-name"><input type="text" placeholder="目标列名" value="'+esc(name)+'" id="shName-'+idx+'">'+
+    '<button class="shr-del" onclick="removeStdHeaderRow('+idx+')"><svg><use href="#i-x"/></svg></button></div>'+
+    '<div class="shr-label">可匹配的 Excel 列名</div>'+
+    '<div class="source-col-tags" id="scTags-'+idx+'" onclick="focusSourceColInput('+idx+')">'+
+    tagsHtml+'<input type="text" class="source-col-input" id="scInput-'+idx+'" placeholder="输入后回车添加..." onkeydown="onSourceColKey(event,'+idx+')"></div>'+
+    '<div class="vm-section">'+
+    '<div class="vm-label">值映射规则</div>'+
+    '<div id="vmList-'+idx+'">'+vmHtml+'</div>'+
+    '<button class="vm-add-btn" onclick="addVmRow('+idx+')">+ 添加值映射</button></div></div>';
+}
+function renderVmRow(idx,vi,vm){
+  let type=vm?(vm.source_file_contains?'file':(vm.when_column?'cond':'file')):'file';
+  let html='<div class="vm-row" id="vm-'+idx+'-'+vi+'"><select class="vm-type" onchange="onVmTypeChange('+idx+','+vi+')">'+
+    '<option value="file"'+(type==='file'?' selected':'')+'>按文件名映射</option>'+
+    '<option value="cond"'+(type==='cond'?' selected':'')+'>按条件跨列映射</option></select>';
+  if(type==='file'){
+    html+='<input type="text" class="vm-med" placeholder="文件名包含" value="'+esc(vm?vm.source_file_contains||'':'')+'" id="vmFile-'+idx+'-'+vi+'">'+
+      '<input type="text" class="vm-small" placeholder="原值" value="'+esc(vm?vm.source_value||'':'')+'" id="vmSrc-'+idx+'-'+vi+'">'+
+      '<span style="font-size:11px;color:var(--text-4)">→</span>'+
+      '<input type="text" class="vm-small" placeholder="目标值" value="'+esc(vm?vm.target_value||'':'')+'" id="vmTgt-'+idx+'-'+vi+'">';
+  }else{
+    html+='<input type="text" class="vm-med" placeholder="判断列名" value="'+esc(vm?vm.when_column||'':'')+'" id="vmWhen-'+idx+'-'+vi+'">'+
+      '<span style="font-size:11px;color:var(--text-4)">=</span>'+
+      '<input type="text" class="vm-small" placeholder="值" value="'+esc(vm?vm.equals||'':'')+'" id="vmEquals-'+idx+'-'+vi+'">'+
+      '<span style="font-size:11px;color:var(--text-4)">→用列</span>'+
+      '<input type="text" class="vm-small" placeholder="取值列名" value="'+esc(vm?vm.use_column||'':'')+'" id="vmUseCol-'+idx+'-'+vi+'">';
+  }
+  html+='<button class="vm-del" onclick="removeVmRow('+idx+','+vi+')">×</button></div>';
+  return html;
+}
+let vmCounters={};
+function addVmRow(idx){
+  if(!vmCounters[idx])vmCounters[idx]=0;
+  let vi=vmCounters[idx]++;
+  let container=document.getElementById('vmList-'+idx);
+  if(!container)return;
+  let div=document.createElement('div');
+  div.innerHTML=renderVmRow(idx,vi,null);
+  container.appendChild(div.firstChild);
+}
+function onVmTypeChange(idx,vi){
+  let select=document.getElementById('vm-'+idx+'-'+vi+' .vm-type');
+  if(!select)return;
+  let type=select.value;
+  let vm={};
+  if(type==='file'){vm={source_file_contains:'',source_value:'',target_value:''};}
+  else{vm={when_column:'',equals:'',use_column:''};}
+  let row=document.getElementById('vm-'+idx+'-'+vi);
+  if(row){
+    row.innerHTML=renderVmRow(idx,vi,vm).replace('<div class="vm-row" id="vm-'+idx+'-'+vi+'">','').replace('</div>','');
+  }
+}
+function removeVmRow(idx,vi){
+  let el=document.getElementById('vm-'+idx+'-'+vi);
+  if(el)el.remove();
+}
+let stdHeaderCounter=100;
+let ruleParsedSheets=[];
+
+async function onRuleFileUpload(input){
+  const file=input.files[0];
+  if(!file)return;
+  showLoading('正在解析 Excel...');
+  try{
+    const fd=new FormData();
+    fd.append('files',file);
+    const resp=await fetch('/api/rules/parse',{method:'POST',body:fd});
+    const data=await resp.json();
+    if(data.status==='success'){
+      ruleParsedSheets=data.sheets;
+      renderSheetSelector(data.sheets);
+      // 如果只有一个sheet，直接导入
+      if(data.sheets.length===1){
+        importHeadersFromSheet(0);
+      }
+    }else{
+      toast('解析失败: '+(data.detail||'未知错误'),'error');
+    }
+  }catch(e){toast('请求出错: '+e.message,'error')}
+  finally{hideLoading()}
+  input.value='';
+}
+function renderSheetSelector(sheets){
+  const container=document.getElementById('ruleSheetSelector');
+  if(!sheets||sheets.length<=1){container.style.display='none';return}
+  container.style.display='block';
+  let html='<div style="font-size:11px;color:var(--text-4);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">选择 Sheet</div><div class="rule-sheet-selector">';
+  sheets.forEach((s,i)=>{
+    html+='<div class="rule-sheet-tab'+(i===0?' active':'')+'" onclick="selectSheet('+i+')" id="sheetTab-'+i+'">'+
+      '<span>'+esc(s.sheet_name)+'</span><span class="rst-count">'+s.headers.length+' 列</span></div>';
+  });
+  html+='</div>';
+  html+='<button class="btn btn-primary" style="padding:6px 16px;font-size:12px" onclick="importHeadersFromSheet(currentSheetIdx)">导入此 Sheet 表头</button>';
+  html+='<div style="margin-top:6px;font-size:11px;color:var(--text-4)">点击 Sheet 切换，再点「导入」按钮填充表头</div>';
+  container.innerHTML=html;
+}
+let currentSheetIdx=0;
+function selectSheet(idx){
+  currentSheetIdx=idx;
+  document.querySelectorAll('.rule-sheet-tab').forEach((t,i)=>t.classList.toggle('active',i===idx));
+}
+function importHeadersFromSheet(idx){
+  const sheet=ruleParsedSheets[idx];
+  if(!sheet||!sheet.headers||sheet.headers.length===0){
+    toast('该 Sheet 没有有效的表头','error');return;
+  }
+  const container=document.getElementById('stdHeaderList');
+  container.innerHTML='';
+  sheet.headers.forEach((h,i)=>{
+    const rowIdx=++stdHeaderCounter;
+    const div=document.createElement('div');
+    div.innerHTML=renderStdHeaderRow(rowIdx,h,[h],[]);
+    container.appendChild(div.firstChild);
+  });
+  // 如果规则名称为空，用文件名填充
+  const nameInput=document.getElementById('ruleFormName');
+  if(!nameInput.value.trim()){
+    const fname=sheet.filename.replace(/\.xlsx$/i,'').replace(/\.xls$/i,'');
+    nameInput.value=fname;
+  }
+  toast('已导入 '+sheet.headers.length+' 个目标列名（来自 '+sheet.sheet_name+'）');
+}
+
+function addStdHeaderRow(){
+  const idx=++stdHeaderCounter;
+  const container=document.getElementById('stdHeaderList');
+  const div=document.createElement('div');
+  div.innerHTML=renderStdHeaderRow(idx,'',[],[]);
+  container.appendChild(div.firstChild);
+}
+function removeStdHeaderRow(idx){
+  const el=document.getElementById('shr-'+idx);
+  if(el)el.remove();
+}
+function focusSourceColInput(idx){
+  const inp=document.getElementById('scInput-'+idx);
+  if(inp)inp.focus();
+}
+function onSourceColKey(e,idx){
+  if(e.key==='Enter'||e.key===','){
+    e.preventDefault();
+    const inp=e.target;
+    const val=inp.value.trim().replace(/,$/,'');
+    if(!val)return;
+    const tagsContainer=document.getElementById('scTags-'+idx);
+    const tag=document.createElement('span');
+    tag.className='source-col-tag';
+    tag.innerHTML=esc(val)+'<span class="sct-x" onclick="this.parentElement.remove()">×</span>';
+    tagsContainer.insertBefore(tag,inp);
+    inp.value='';
+  }
+}
+function removeSourceCol(idx,sci){
+  const tags=document.querySelectorAll('#scTags-'+idx+' .source-col-tag');
+  if(tags[sci])tags[sci].remove();
+}
+function collectRuleFormData(){
+  const name=document.getElementById('ruleFormName').value.trim();
+  if(!name){toast('请输入规则名称','error');return null}
+  const stdHeaders=[];
+  const rows=document.querySelectorAll('.std-header-row');
+  rows.forEach(row=>{
+    const idMatch=row.id.match(/shr-(\d+)/);
+    if(!idMatch)return;
+    const idx=idMatch[1];
+    const shName=document.getElementById('shName-'+idx);
+    const shNameVal=shName?shName.value.trim():'';
+    if(!shNameVal)return;
+    const sourceCols=[];
+    row.querySelectorAll('.source-col-tag').forEach(tag=>{
+      const text=tag.textContent.replace(/×$/,'').trim();
+      if(text)sourceCols.push(text);
+    });
+    const valueMappings=[];
+    row.querySelectorAll('.vm-row').forEach(vmRow=>{
+      const typeSel=vmRow.querySelector('.vm-type');
+      const type=typeSel?typeSel.value:'file';
+      if(type==='file'){
+        const fileEl=vmRow.querySelector('input[id^="vmFile-"]');
+        const srcEl=vmRow.querySelector('input[id^="vmSrc-"]');
+        const tgtEl=vmRow.querySelector('input[id^="vmTgt-"]');
+        if(fileEl&&srcEl&&tgtEl){
+          const fv=fileEl.value.trim(),sv=srcEl.value.trim(),tv=tgtEl.value.trim();
+          if(fv&&sv)valueMappings.push({source_file_contains:fv,source_value:sv,target_value:tv});
+        }
+      }else{
+        const whenEl=vmRow.querySelector('input[id^="vmWhen-"]');
+        const eqEl=vmRow.querySelector('input[id^="vmEquals-"]');
+        const useEl=vmRow.querySelector('input[id^="vmUseCol-"]');
+        if(whenEl&&eqEl&&useEl){
+          const wv=whenEl.value.trim(),ev=eqEl.value.trim(),uv=useEl.value.trim();
+          if(wv&&ev)valueMappings.push({when_column:wv,equals:ev,use_column:uv});
+        }
+      }
+    });
+    const shObj={name:shNameVal,source_columns:sourceCols};
+    if(valueMappings.length>0)shObj.value_mappings=valueMappings;
+    stdHeaders.push(shObj);
+  });
+  if(stdHeaders.length===0){toast('请至少添加一个目标列名','error');return null}
+  return{name,standard_headers:stdHeaders};
+}
+async function saveRuleForm(){
+  const data=collectRuleFormData();
+  if(!data)return;
+  showLoading('正在保存...');
+  try{
+    let resp;
+    if(editingRuleId){
+      resp=await fetch('/api/rules/'+editingRuleId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    }else{
+      resp=await fetch('/api/rules',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    }
+    const result=await resp.json();
+    if(result.status==='success'){
+      toast(editingRuleId?'规则已更新':'规则已创建');
+      await loadRulesData();
+    }else{
+      toast('保存失败: '+(result.detail||'未知错误'),'error');
+    }
+  }catch(e){toast('请求出错: '+e.message,'error')}
+  finally{hideLoading()}
+}
+async function deleteRule(ruleId){
+  if(!confirm('确定删除此规则？'))return;
+  try{
+    const resp=await fetch('/api/rules/'+ruleId,{method:'DELETE'});
+    const result=await resp.json();
+    if(result.status==='success'){toast('规则已删除');await loadRulesData()}
+    else{toast('删除失败','error')}
+  }catch(e){toast('请求出错','error')}
+}
+
+// ==================== Rule Selector in Step 2 ====================
+function populateRuleSelector(rules){
+  const sel=document.getElementById('ruleSelect');
+  const curVal=sel.value;
+  sel.innerHTML='<option value="">-- 选择规则 --</option>';
+  (rules||[]).forEach(r=>{
+    const opt=document.createElement('option');
+    opt.value=r.id;
+    opt.textContent=r.name+' ('+r.standard_headers.length+' 个目标列名)';
+    sel.appendChild(opt);
+  });
+  if(curVal)sel.value=curVal;
+  document.getElementById('ruleSelector').style.display=(rules&&rules.length>0)?'flex':'none';
+}
+
+// Normalize string for matching (mirrors backend logic)
+function normalizeStr(s){
+  if(!s)return'';
+  return s.trim().toLowerCase().replace(/\s/g,'').replace(/_/g,'');
+}
+
+// Match headers to rule on the frontend (for visual feedback)
+function matchHeadersToRule(headers,rule){
+  const stdHeaders=rule.standard_headers||[];
+  const result=[]; // list of {header, stdName or null}
+  const usedTargets=new Set();
+  for(let header of headers){
+    const hs=header?String(header):'';
+    if(!hs){result.push({header:hs,stdName:null});continue}
+    const hsNorm=normalizeStr(hs);
+    let matched=null;
+    for(let sh of stdHeaders){
+      const target=sh.name;
+      if(!target||usedTargets.has(target))continue;
+      for(let sc of(sh.source_columns||[])){
+        if(normalizeStr(sc)===hsNorm){matched=target;break}
+      }
+      if(matched)break;
+    }
+    if(!matched){
+      for(let sh of stdHeaders){
+        const target=sh.name;
+        if(!target||usedTargets.has(target))continue;
+        for(let sc of(sh.source_columns||[])){
+          const scNorm=normalizeStr(sc);
+          if(!scNorm)continue;
+          if(scNorm.includes(hsNorm)||hsNorm.includes(scNorm)){
+            const maxLen=Math.max(scNorm.length,hsNorm.length);
+            const minLen=Math.min(scNorm.length,hsNorm.length);
+            if(minLen>=maxLen*0.5){matched=target;break}
+          }
+        }
+        if(matched)break;
+      }
+    }
+    if(matched){
+      usedTargets.add(matched);
+      result.push({header:hs,stdName:matched});
+    }else{
+      result.push({header:hs,stdName:null});
+    }
+  }
+  return result;
+}
+
+function applyRuleToSheets(){
+  const ruleId=document.getElementById('ruleSelect').value;
+  if(!ruleId){toast('请先选择一个规则','error');return}
+  const rule=rulesData.find(r=>r.id===ruleId);
+  if(!rule){toast('规则未找到','error');return}
+  let totalMatched=0;
+  Object.keys(sheetStates).forEach(key=>{
+    const st=sheetStates[key];
+    const autoMap=matchHeadersToRule(st.originalHeaders,rule);
+    autoMap.forEach((item,idx)=>{
+      if(item.stdName){
+        st.headers[idx]=item.stdName;
+        totalMatched++;
+      }
+    });
+  });
+  if(analyzeData)renderSheetTables(analyzeData);
+  toast('已按规则「'+rule.name+'」自动匹配 '+totalMatched+' 列');
+}
+
+function clearRuleMapping(){
+  Object.keys(sheetStates).forEach(key=>{
+    const st=sheetStates[key];
+    st.headers=[...st.originalHeaders];
+  });
+  document.getElementById('ruleSelect').value='';
+  if(analyzeData)renderSheetTables(analyzeData);
+  toast('已清除所有映射');
+}
+
+// ==================== User Auth ====================
+async function loadUserInfo(){
+  try{
+    const resp=await fetch('/api/me');
+    if(!resp.ok){window.location.href='/login';return}
+    const data=await resp.json();
+    if(data.status==='success'&&data.user){
+      const u=data.user;
+      document.getElementById('userName').textContent=u.name||u.username;
+      document.getElementById('userRole').textContent=u.role==='admin'?'管理员':'普通用户';
+      document.getElementById('userAvatar').textContent=(u.name||u.username||'?')[0].toUpperCase();
+      document.getElementById('userBox').style.display='flex';
+    }
+  }catch(e){window.location.href='/login'}
+}
+async function doLogout(){
+  try{
+    await fetch('/api/logout',{method:'POST'});
+  }catch(e){}
+  window.location.href='/login';
+}
+// Load user info on page load
+loadUserInfo();
+
+</script>
+</body>
+</html>
