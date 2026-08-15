@@ -19,6 +19,8 @@
 .btn-logout{background:none;border:1px solid var(--border);border-radius:6px;padding:6px;cursor:pointer;color:var(--text-3);display:flex;align-items:center}
 .btn-logout:hover{background:var(--danger-bg);border-color:var(--danger);color:var(--danger)}
 .btn-logout svg{width:16px;height:16px}
+.mail-status-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.mail-status-bar .lbl{font-size:13px;font-weight:600;color:var(--text-2)}
 </style>
 </head>
 <body>
@@ -36,6 +38,18 @@
 </header>
 
 <div class="mail-wrap">
+
+  <div class="card card-pad" style="margin-bottom:16px">
+    <div class="mail-status-bar">
+      <span class="lbl">运行状态：</span>
+      <span class="badge badge-accent badge-hidden" id="mailStatusRunning">● 运行中</span>
+      <span class="badge badge-amber" id="mailStatusStopped">○ 已停止</span>
+      <div style="flex:1"></div>
+      <button class="btn btn-accent" style="padding:6px 16px;font-size:12px" onclick="startMail()">启动轮询</button>
+      <button class="btn btn-ghost" style="padding:6px 16px;font-size:12px" onclick="stopMail()">停止轮询</button>
+      <button class="btn btn-primary" style="padding:6px 16px;font-size:12px" onclick="runMailOnce()">立即执行</button>
+    </div>
+  </div>
 
   <div class="card" style="margin-bottom:16px">
     <div class="card-head">
@@ -104,6 +118,51 @@ function toast(msg,type){const t=document.getElementById('toast');const icon=typ
 function showLoading(text){document.getElementById('loadingText').textContent=text||'处理中...';document.getElementById('loadingOverlay').classList.add('show')}
 function hideLoading(){document.getElementById('loadingOverlay').classList.remove('show')}
 
+function updateMailStatus(running){
+  document.getElementById('mailStatusRunning').classList.toggle('badge-hidden',!running);
+  document.getElementById('mailStatusStopped').classList.toggle('badge-hidden',running);
+}
+async function loadMailStatus(){
+  try{
+    const resp=await fetch('/api/mail/status');
+    const data=await resp.json();
+    if(data.status==='success')updateMailStatus(data.running);
+  }catch(e){}
+}
+async function startMail(){
+  showLoading('正在启动...');
+  try{
+    const resp=await fetch('/api/mail/start',{method:'POST'});
+    const data=await resp.json();
+    updateMailStatus(data.running);
+    toast(data.running?'已启动轮询':'启动失败');
+  }catch(e){toast('请求出错: '+e.message,'error')}
+  finally{hideLoading()}
+}
+async function stopMail(){
+  showLoading('正在停止...');
+  try{
+    const resp=await fetch('/api/mail/stop',{method:'POST'});
+    const data=await resp.json();
+    updateMailStatus(data.running);
+    toast('已停止轮询');
+  }catch(e){toast('请求出错: '+e.message,'error')}
+  finally{hideLoading()}
+}
+async function runMailOnce(){
+  showLoading('正在立即执行，可能需要几十秒...');
+  try{
+    const resp=await fetch('/api/mail/run',{method:'POST'});
+    const data=await resp.json();
+    if(data.status==='success'){
+      toast('立即执行完成，处理 '+data.handled+' 封邮件');
+      loadMailLogs();
+      loadMailResults();
+      loadMailTasks();
+    }else{toast('执行失败: '+(data.detail||'未知错误'),'error')}
+  }catch(e){toast('请求出错: '+e.message,'error')}
+  finally{hideLoading()}
+}
 async function loadMailLogs(){
   try{
     const resp=await fetch('/api/mail/logs');
@@ -184,6 +243,7 @@ async function doLogout(){
 }
 
 loadUserInfo();
+loadMailStatus();
 loadMailLogs();
 loadMailResults();
 loadMailTasks();

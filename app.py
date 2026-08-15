@@ -9,6 +9,7 @@
 import os
 import json
 import uuid
+import hashlib
 import datetime
 import secrets
 import asyncio
@@ -71,10 +72,17 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # 用户数据库（持久化到 data/users.json，含 IP 绑定）
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 
+PASSWORD_SALT = "excel-merger-salt"
+
+
+def hash_password(pw: str) -> str:
+    return hashlib.sha256((PASSWORD_SALT + pw).encode()).hexdigest()
+
+
 DEFAULT_USERS = [
-    {"username": "admin", "password": "admin123", "name": "管理员", "role": "admin", "ip": ""},
-    {"username": "user1", "password": "user123", "name": "用户一", "role": "user", "ip": ""},
-    {"username": "user2", "password": "user123", "name": "用户二", "role": "user", "ip": ""},
+    {"username": "admin", "password": hash_password("admin123"), "name": "管理员", "role": "admin", "ip": ""},
+    {"username": "user1", "password": hash_password("user123"), "name": "用户一", "role": "user", "ip": ""},
+    {"username": "user2", "password": hash_password("user123"), "name": "用户二", "role": "user", "ip": ""},
 ]
 
 
@@ -86,7 +94,13 @@ def load_users() -> dict:
     try:
         with open(USERS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return {u["username"]: u for u in data}
+        users = {}
+        for u in data:
+            pw = u.get("password", "")
+            if len(pw) != 64 or not all(c in "0123456789abcdef" for c in pw):
+                u["password"] = hash_password(pw)
+            users[u["username"]] = u
+        return users
     except (json.JSONDecodeError, IOError):
         return {u["username"]: dict(u) for u in DEFAULT_USERS}
 
@@ -169,7 +183,7 @@ async def login_api(request: Request):
     password = body.get("password", "").strip()
 
     user = USERS.get(username)
-    if not user or user["password"] != password:
+    if not user or user["password"] != hash_password(password):
         return JSONResponse({"status": "error", "detail": "用户名或密码错误"}, status_code=401)
 
     client_ip = get_client_ip(request)
@@ -213,6 +227,31 @@ async def get_me(request: Request):
     if not user:
         return JSONResponse({"status": "error", "detail": "未登录"}, status_code=401)
     return JSONResponse({"status": "success", "user": user})
+
+
+@app.get("/api/users")
+async def list_users(request: Request):
+    user = get_current_user(request)
+    if not user or user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="仅管理员可查看")
+    users = [
+        {"username": u["username"], "name": u["name"], "role": u["role"], "ip": u.get("ip", "")}
+        for u in USERS.values()
+    ]
+    return JSONResponse(content={"status": "success", "users": users})
+
+
+@app.post("/api/users/{username}/reset-ip")
+async def reset_user_ip(username: str, request: Request):
+    user = get_current_user(request)
+    if not user or user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="仅管理员可操作")
+    target = USERS.get(username)
+    if not target:
+        raise HTTPException(status_code=404, detail="账号不存在")
+    target["ip"] = ""
+    save_users(USERS)
+    return JSONResponse(content={"status": "success"})
 
 
 # ===================== 规则 CRUD =====================
@@ -344,6 +383,9 @@ async def index(request: Request):
 
 @app.get("/mail", response_class=HTMLResponse)
 async def mail_page(request: Request):
+    user = get_current_user(request)
+    if not user or user["role"] != "admin":
+        return RedirectResponse("/mail/results", status_code=302)
     with open("templates/mail.html", "r", encoding="utf-8") as f:
         return f.read()
 

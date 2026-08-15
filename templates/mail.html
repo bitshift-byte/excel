@@ -38,18 +38,6 @@
 
 <div class="mail-wrap">
 
-  <div class="card card-pad" style="margin-bottom:16px">
-    <div class="mail-status-bar">
-      <span class="lbl">运行状态：</span>
-      <span class="badge badge-accent badge-hidden" id="mailStatusRunning">● 运行中</span>
-      <span class="badge badge-amber" id="mailStatusStopped">○ 已停止</span>
-      <div style="flex:1"></div>
-      <button class="btn btn-accent" style="padding:6px 16px;font-size:12px" onclick="startMail()">启动轮询</button>
-      <button class="btn btn-ghost" style="padding:6px 16px;font-size:12px" onclick="stopMail()">停止轮询</button>
-      <button class="btn btn-primary" style="padding:6px 16px;font-size:12px" onclick="runMailOnce()">立即执行</button>
-    </div>
-  </div>
-
   <div class="rule-form-wrap" style="margin-bottom:16px">
     <div class="rfw-head"><h3><svg style="width:18px;height:18px"><use href="#i-mail"/></svg> 邮箱配置</h3></div>
 
@@ -86,6 +74,19 @@
     <a class="btn btn-primary" href="/mail/results" style="text-decoration:none">查看处理结果 →</a>
   </div>
 
+  <div class="card" style="margin-top:16px" id="userMgmtCard" >
+    <div class="card-head">
+      <div class="ch-icon"><svg><use href="#i-mail"/></svg></div>
+      <span class="ch-title">账号管理</span>
+      <span class="ch-sub">IP 绑定状态（仅管理员可见）</span>
+      <div class="ch-spacer"></div>
+      <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="loadUsers()">刷新</button>
+    </div>
+    <div class="card-pad" style="padding-top:12px">
+      <div id="userList"></div>
+    </div>
+  </div>
+
 </div>
 
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
@@ -117,10 +118,6 @@ function toast(msg,type){const t=document.getElementById('toast');const icon=typ
 function showLoading(text){document.getElementById('loadingText').textContent=text||'处理中...';document.getElementById('loadingOverlay').classList.add('show')}
 function hideLoading(){document.getElementById('loadingOverlay').classList.remove('show')}
 
-function updateMailStatus(running){
-  document.getElementById('mailStatusRunning').classList.toggle('badge-hidden',!running);
-  document.getElementById('mailStatusStopped').classList.toggle('badge-hidden',running);
-}
 async function loadMailConfig(){
   try{
     const resp=await fetch('/api/mail/config');
@@ -134,7 +131,6 @@ async function loadMailConfig(){
       document.getElementById('mailProvinces').value=(cfg.provinces||[]).join(', ');
       document.getElementById('mailInterval').value=cfg.poll_interval_seconds||3600;
       document.getElementById('mailDate').value=cfg.date||'';
-      updateMailStatus(data.running);
     }
   }catch(e){toast('加载邮件配置失败','error')}
 }
@@ -157,41 +153,8 @@ async function saveMailConfig(){
     const resp=await fetch('/api/mail/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
     const data=await resp.json();
     if(data.status==='success'){
-      updateMailStatus(data.running);
       toast(cfg.enabled?'配置已保存，已启动轮询':'配置已保存，已停止轮询');
     }else{toast('保存失败: '+(data.detail||'未知错误'),'error')}
-  }catch(e){toast('请求出错: '+e.message,'error')}
-  finally{hideLoading()}
-}
-async function startMail(){
-  showLoading('正在启动...');
-  try{
-    const resp=await fetch('/api/mail/start',{method:'POST'});
-    const data=await resp.json();
-    updateMailStatus(data.running);
-    toast(data.running?'已启动轮询':'启动失败');
-  }catch(e){toast('请求出错: '+e.message,'error')}
-  finally{hideLoading()}
-}
-async function stopMail(){
-  showLoading('正在停止...');
-  try{
-    const resp=await fetch('/api/mail/stop',{method:'POST'});
-    const data=await resp.json();
-    updateMailStatus(data.running);
-    toast('已停止轮询');
-  }catch(e){toast('请求出错: '+e.message,'error')}
-  finally{hideLoading()}
-}
-async function runMailOnce(){
-  showLoading('正在立即执行，可能需要几十秒...');
-  try{
-    const resp=await fetch('/api/mail/run',{method:'POST'});
-    const data=await resp.json();
-    if(data.status==='success'){
-      toast('立即执行完成，处理 '+data.handled+' 封邮件');
-      window.location.href='/mail/results';
-    }else{toast('执行失败: '+(data.detail||'未知错误'),'error')}
   }catch(e){toast('请求出错: '+e.message,'error')}
   finally{hideLoading()}
 }
@@ -216,6 +179,7 @@ async function doLogout(){
 
 loadUserInfo();
 loadMailConfig();
+loadUsers();
 </script>
 </body>
 </html>
