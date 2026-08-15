@@ -40,7 +40,9 @@ from merger import (
 
 import mail_reader
 
-MAIL_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "mail_config.json")
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+MAIL_CONFIG_FILE = os.path.join(DATA_DIR, "mail_config.json")
 
 
 @asynccontextmanager

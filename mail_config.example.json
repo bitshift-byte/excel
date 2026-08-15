@@ -9,5 +9,5 @@
   "poll_interval_seconds": 3600,
   "output_dir": "output",
   "output_prefix": "邮件合并",
-  "processed_uids_file": "processed_uids.json"
+  "processed_uids_file": "data/processed_uids.json"
 }

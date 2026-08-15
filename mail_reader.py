@@ -126,7 +126,7 @@ def load_config(path: str) -> dict:
 
 def process_once(cfg: dict) -> int:
     since = datetime.date.today() - datetime.timedelta(days=max(0, int(cfg.get("days_back", 1)) - 1))
-    uids_file = cfg.get("processed_uids_file", "processed_uids.json")
+    uids_file = cfg.get("processed_uids_file", "data/processed_uids.json")
     processed = load_processed_uids(uids_file)
     output_dir = cfg.get("output_dir", "output")
 

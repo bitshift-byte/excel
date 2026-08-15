@@ -6,5 +6,4 @@ output/
 venv/
 .venv/
 .env
-mail_config.json
-processed_uids.json
+data/
