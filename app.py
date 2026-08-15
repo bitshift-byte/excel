@@ -305,6 +305,12 @@ async def mail_page(request: Request):
         return f.read()
 
 
+@app.get("/mail/results", response_class=HTMLResponse)
+async def mail_results_page(request: Request):
+    with open("templates/results.html", "r", encoding="utf-8") as f:
+        return f.read()
+
+
 @app.get("/api/regions")
 async def get_regions():
     return JSONResponse(content={
