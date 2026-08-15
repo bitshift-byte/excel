@@ -764,6 +764,12 @@ def merge_files(
     else:
         filtered = aligned
 
+    street_key = None
+    for col in all_columns:
+        if "街道" in col and "街道2" not in col and "街道 3" not in col:
+            street_key = col
+            break
+
     # 构建多 Sheet 输出
     wb = openpyxl.Workbook()
     output_headers = ["售达方" if h == "售达方的名字" else h for h in all_columns]
@@ -821,6 +827,9 @@ def merge_files(
         "total_merged_rows": len(merged_rows),
         "total_columns": len(all_columns),
         "filtered_rows": len(filtered),
+        "pivot_delivery_count": len(p4_data),
+        "pivot_factory_count": len(p2_data),
+        "street_column": street_key if street_key else "未找到",
         "provinces": prov_list,
     }
 
