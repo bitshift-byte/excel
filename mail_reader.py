@@ -2,6 +2,7 @@
 import os
 import json
 import time
+import threading
 import imaplib
 import email
 import datetime
@@ -151,13 +152,53 @@ def main():
     cfg = load_config(cfg_path)
     interval = int(cfg.get("poll_interval_seconds", 3600))
     print(f"[mail_reader] 启动，轮询间隔 {interval}s，配置 {cfg_path}")
-    while True:
+    start_background(cfg)
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        stop_background()
+
+
+# ---------- 后台线程管理 ----------
+
+_stop_event = threading.Event()
+_worker_thread = None
+
+
+def _run_loop(cfg: dict):
+    interval = int(cfg.get("poll_interval_seconds", 3600))
+    while not _stop_event.is_set():
         try:
             n = process_once(cfg)
             print(f"[mail_reader] 本轮处理 {n} 封邮件: {datetime.datetime.now()}")
         except Exception as e:
             print(f"[mail_reader] 本轮异常: {e}")
-        time.sleep(interval)
+        _stop_event.wait(interval)
+
+
+def start_background(cfg: dict) -> bool:
+    global _worker_thread
+    if _worker_thread and _worker_thread.is_alive():
+        return False
+    _stop_event.clear()
+    _worker_thread = threading.Thread(target=_run_loop, args=(cfg,), daemon=True)
+    _worker_thread.start()
+    return True
+
+
+def stop_background() -> bool:
+    global _worker_thread
+    if not _worker_thread or not _worker_thread.is_alive():
+        return False
+    _stop_event.set()
+    _worker_thread.join(timeout=5)
+    _worker_thread = None
+    return True
+
+
+def is_running() -> bool:
+    return _worker_thread is not None and _worker_thread.is_alive()
 
 
 if __name__ == "__main__":

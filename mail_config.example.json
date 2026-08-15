@@ -1,4 +1,5 @@
 {
+  "enabled": false,
   "imap_host": "imap.126.com",
   "email": "your_account@126.com",
   "auth_code": "你的126客户端授权码",

@@ -476,6 +476,7 @@ table.rtbl{border-collapse:collapse;width:100%;font-size:13px}
   <symbol id="i-database" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></symbol>
   <symbol id="i-log-out" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
   <symbol id="i-user-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="8" r="3"/><path d="M6 20c0-3 3-4 6-4s6 1 6 4"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></symbol>
 </svg>
 
 <div class="app">
@@ -495,6 +496,7 @@ table.rtbl{border-collapse:collapse;width:100%;font-size:13px}
         <div class="nav-section-title">功能</div>
         <div class="nav-item active" onclick="goStep(1)"><svg><use href="#i-upload"/></svg> 文件合并</div>
         <div class="nav-item" onclick="openRuleManager()"><svg><use href="#i-layers"/></svg> 规则管理</div>
+        <div class="nav-item" onclick="openMailSettings()"><svg><use href="#i-mail"/></svg> 邮件设置</div>
       </div>
       <div class="nav-section">
         <div class="nav-section-title">帮助</div>
@@ -647,6 +649,59 @@ table.rtbl{border-collapse:collapse;width:100%;font-size:13px}
           <div id="rulesContainer"></div>
         </div>
 
+        <!-- ===== Mail Settings Page ===== -->
+        <div class="step-panel" id="stepMail">
+          <div class="rule-page-head">
+            <div>
+              <h2><svg><use href="#i-mail"/></svg> 邮件设置</h2>
+              <div class="rph-sub">配置 126 邮箱，自动读取附件 Excel 并合并筛选</div>
+            </div>
+          </div>
+
+          <div class="card card-pad" style="margin-bottom:16px">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <span style="font-size:13px;font-weight:600;color:var(--text-2)">运行状态：</span>
+              <span class="badge badge-accent badge-hidden" id="mailStatusRunning">● 运行中</span>
+              <span class="badge badge-amber" id="mailStatusStopped">○ 已停止</span>
+              <div style="flex:1"></div>
+              <button class="btn btn-accent" style="padding:6px 16px;font-size:12px" onclick="startMail()">启动轮询</button>
+              <button class="btn btn-ghost" style="padding:6px 16px;font-size:12px" onclick="stopMail()">停止轮询</button>
+            </div>
+          </div>
+
+          <div class="rule-form-wrap">
+            <div class="rfw-head"><h3><svg style="width:18px;height:18px"><use href="#i-mail"/></svg> 邮箱配置</h3></div>
+
+            <div class="rule-form-group" style="display:flex;align-items:center;gap:8px">
+              <input type="checkbox" id="mailEnabled" style="width:18px;height:18px">
+              <label class="rule-form-label" style="margin:0" for="mailEnabled">启用邮件自动读取（保存后自动开始轮询）</label>
+            </div>
+
+            <div class="rule-form-group"><label class="rule-form-label">邮箱地址</label>
+              <input type="text" class="rule-form-input" id="mailEmail" placeholder="your_account@126.com"></div>
+
+            <div class="rule-form-group"><label class="rule-form-label">客户端授权码</label>
+              <input type="password" class="rule-form-input" id="mailAuthCode" placeholder="126 邮箱的客户端授权码（非登录密码）"></div>
+
+            <div class="rule-form-group"><label class="rule-form-label">主题关键词（逗号分隔，任一命中即处理）</label>
+              <input type="text" class="rule-form-input" id="mailKeywords" placeholder="总表, 月报"></div>
+
+            <div class="rule-form-group"><label class="rule-form-label">筛选省份（逗号分隔，留空 = 全量合并）</label>
+              <input type="text" class="rule-form-input" id="mailProvinces" placeholder="江苏省, 浙江省"></div>
+
+            <div style="display:flex;gap:16px">
+              <div class="rule-form-group" style="flex:1"><label class="rule-form-label">轮询间隔（秒）</label>
+                <input type="number" class="rule-form-input" id="mailInterval" value="3600"></div>
+              <div class="rule-form-group" style="flex:1"><label class="rule-form-label">日期回溯（天，1=今天）</label>
+                <input type="number" class="rule-form-input" id="mailDaysBack" value="1"></div>
+            </div>
+
+            <div style="display:flex;gap:10px;margin-top:20px">
+              <button class="btn btn-primary" style="flex:1" onclick="saveMailConfig()">保存配置</button>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -721,14 +776,15 @@ const STEP_TITLES=[
 function showStep(n){
   [1,2,3].forEach(i=>document.getElementById('step'+i).classList.toggle('on',i===n));
   document.getElementById('stepRules').classList.toggle('on',n==='rules');
-  const isRules=n==='rules';
+  document.getElementById('stepMail').classList.toggle('on',n==='mail');
+  const isSpecial=n==='rules'||n==='mail';
   const progress=document.querySelector('.progress');
-  if(progress)progress.style.visibility=isRules?'hidden':'visible';
-  if(isRules){
-    document.getElementById('topbarTitle').textContent='规则管理';
-    document.getElementById('topbarSub').textContent='管理目标列名规则';
+  if(progress)progress.style.visibility=isSpecial?'hidden':'visible';
+  if(isSpecial){
+    document.getElementById('topbarTitle').textContent=n==='rules'?'规则管理':'邮件设置';
+    document.getElementById('topbarSub').textContent=n==='rules'?'管理目标列名规则':'配置邮箱自动读取附件';
     document.querySelectorAll('.nav-item').forEach(item=>item.classList.remove('active'));
-    document.querySelector('.nav-item[onclick="openRuleManager()"]')?.classList.add('active');
+    document.querySelector('.nav-item[onclick="'+(n==='rules'?'openRuleManager()':'openMailSettings()')+'"]')?.classList.add('active');
   }else{
     [1,2,3].forEach(i=>{const d=document.getElementById('sd'+i),l=document.getElementById('sl'+i);d.className='pg-circle'+(i<n?' done':i===n?' active':'');l.className='pg-label'+(i<n?' done':i===n?' active':'')});
     document.getElementById('sline1').className='pg-line'+(n>1?' done':'');
@@ -1433,6 +1489,78 @@ function clearRuleMapping(){
   document.getElementById('ruleSelect').value='';
   if(analyzeData)renderSheetTables(analyzeData);
   toast('已清除所有映射');
+}
+
+// ==================== Mail Settings ====================
+async function openMailSettings(){
+  showStep('mail');
+  await loadMailConfig();
+}
+async function loadMailConfig(){
+  try{
+    const resp=await fetch('/api/mail/config');
+    const data=await resp.json();
+    if(data.status==='success'){
+      const cfg=data.config||{};
+      document.getElementById('mailEnabled').checked=!!cfg.enabled;
+      document.getElementById('mailEmail').value=cfg.email||'';
+      document.getElementById('mailAuthCode').value=cfg.auth_code||'';
+      document.getElementById('mailKeywords').value=(cfg.subject_keywords||[]).join(', ');
+      document.getElementById('mailProvinces').value=(cfg.provinces||[]).join(', ');
+      document.getElementById('mailInterval').value=cfg.poll_interval_seconds||3600;
+      document.getElementById('mailDaysBack').value=cfg.days_back||1;
+      updateMailStatus(data.running);
+    }
+  }catch(e){toast('加载邮件配置失败','error')}
+}
+function updateMailStatus(running){
+  document.getElementById('mailStatusRunning').classList.toggle('badge-hidden',!running);
+  document.getElementById('mailStatusStopped').classList.toggle('badge-hidden',running);
+}
+async function saveMailConfig(){
+  const cfg={
+    enabled:document.getElementById('mailEnabled').checked,
+    imap_host:'imap.126.com',
+    email:document.getElementById('mailEmail').value.trim(),
+    auth_code:document.getElementById('mailAuthCode').value.trim(),
+    subject_keywords:document.getElementById('mailKeywords').value.split(',').map(s=>s.trim()).filter(Boolean),
+    provinces:document.getElementById('mailProvinces').value.split(',').map(s=>s.trim()).filter(Boolean),
+    poll_interval_seconds:parseInt(document.getElementById('mailInterval').value)||3600,
+    days_back:parseInt(document.getElementById('mailDaysBack').value)||1,
+    output_dir:'output',
+    output_prefix:'邮件合并',
+    processed_uids_file:'processed_uids.json',
+  };
+  showLoading('正在保存配置...');
+  try{
+    const resp=await fetch('/api/mail/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+    const data=await resp.json();
+    if(data.status==='success'){
+      updateMailStatus(data.running);
+      toast(cfg.enabled?'配置已保存，已启动轮询':'配置已保存，已停止轮询');
+    }else{toast('保存失败: '+(data.detail||'未知错误'),'error')}
+  }catch(e){toast('请求出错: '+e.message,'error')}
+  finally{hideLoading()}
+}
+async function startMail(){
+  showLoading('正在启动...');
+  try{
+    const resp=await fetch('/api/mail/start',{method:'POST'});
+    const data=await resp.json();
+    updateMailStatus(data.running);
+    toast(data.running?'已启动轮询':'启动失败');
+  }catch(e){toast('请求出错: '+e.message,'error')}
+  finally{hideLoading()}
+}
+async function stopMail(){
+  showLoading('正在停止...');
+  try{
+    const resp=await fetch('/api/mail/stop',{method:'POST'});
+    const data=await resp.json();
+    updateMailStatus(data.running);
+    toast('已停止轮询');
+  }catch(e){toast('请求出错: '+e.message,'error')}
+  finally{hideLoading()}
 }
 
 // ==================== User Auth ====================

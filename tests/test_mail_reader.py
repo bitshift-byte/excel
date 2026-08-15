@@ -20,3 +20,15 @@ def test_filter_new_uids():
     processed = {b"1", b"2"}
     new = filter_new_uids([b"1", b"2", b"3"], processed)
     assert new == [b"3"]
+
+
+def test_background_thread_start_stop(monkeypatch):
+    import time
+    import mail_reader
+    monkeypatch.setattr(mail_reader, "process_once", lambda cfg: 0)
+    assert mail_reader.is_running() is False
+    assert mail_reader.start_background({"poll_interval_seconds": 3600}) is True
+    time.sleep(0.2)
+    assert mail_reader.is_running() is True
+    assert mail_reader.stop_background() is True
+    assert mail_reader.is_running() is False

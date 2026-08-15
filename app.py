@@ -12,6 +12,7 @@ import uuid
 import datetime
 import secrets
 from typing import List, Dict, Optional
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, RedirectResponse
@@ -36,7 +37,22 @@ from merger import (
     merge_files,
 )
 
-app = FastAPI(title="Excel 合并筛选系统")
+import mail_reader
+
+MAIL_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "mail_config.json")
+
+
+@asynccontextmanager
+async def lifespan(app):
+    if os.path.exists(MAIL_CONFIG_FILE):
+        cfg = mail_reader.load_config(MAIL_CONFIG_FILE)
+        if cfg.get("enabled"):
+            mail_reader.start_background(cfg)
+    yield
+    mail_reader.stop_background()
+
+
+app = FastAPI(title="Excel 合并筛选系统", lifespan=lifespan)
 
 UPLOAD_DIR = "uploads"
 OUTPUT_DIR = "output"
@@ -413,6 +429,49 @@ async def download():
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename=latest,
     )
+
+
+# ===================== 邮件读取器配置 =====================
+
+@app.get("/api/mail/config")
+async def get_mail_config():
+    cfg = None
+    if os.path.exists(MAIL_CONFIG_FILE):
+        with open(MAIL_CONFIG_FILE, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+    return JSONResponse(content={"status": "success", "config": cfg, "running": mail_reader.is_running()})
+
+
+@app.put("/api/mail/config")
+async def set_mail_config(request: Request):
+    body = await request.json()
+    with open(MAIL_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(body, f, ensure_ascii=False, indent=2)
+    if body.get("enabled"):
+        mail_reader.start_background(body)
+    else:
+        mail_reader.stop_background()
+    return JSONResponse(content={"status": "success", "running": mail_reader.is_running()})
+
+
+@app.post("/api/mail/start")
+async def start_mail():
+    if not os.path.exists(MAIL_CONFIG_FILE):
+        raise HTTPException(status_code=400, detail="请先保存邮件配置")
+    cfg = mail_reader.load_config(MAIL_CONFIG_FILE)
+    mail_reader.start_background(cfg)
+    return JSONResponse(content={"status": "success", "running": mail_reader.is_running()})
+
+
+@app.post("/api/mail/stop")
+async def stop_mail():
+    mail_reader.stop_background()
+    return JSONResponse(content={"status": "success", "running": mail_reader.is_running()})
+
+
+@app.get("/api/mail/status")
+async def mail_status():
+    return JSONResponse(content={"status": "success", "running": mail_reader.is_running()})
 
 
 if __name__ == "__main__":
