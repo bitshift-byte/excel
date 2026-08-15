@@ -135,6 +135,7 @@
   <symbol id="i-log-out" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
   <symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></symbol>
   <symbol id="i-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></symbol>
 </svg>
 
 <div class="loading-overlay" id="loadingOverlay">
@@ -157,6 +158,14 @@
       <button class="btn btn-ghost" style="flex:1" onclick="closeRunModal()">取消</button>
       <button class="btn btn-primary" style="flex:1" onclick="confirmRun()">立即执行</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="previewModal" onclick="if(event.target===this)closePreview()">
+  <div class="modal-box" style="max-width:900px">
+    <h3 style="display:flex;align-items:center;gap:8px"><svg style="width:18px;height:18px;color:var(--primary)"><use href="#i-file"/></svg> <span id="previewFilename">预览</span></h3>
+    <div id="previewContent" style="margin-top:12px"></div>
+    <button class="btn btn-ghost" style="margin-top:16px;width:100%" onclick="closePreview()">关闭</button>
   </div>
 </div>
 
@@ -233,6 +242,54 @@ function confirmRun(){
   closeRunModal();
   runMailOnce(date);
 }
+async function previewResult(encFilename, filename){
+  showLoading('正在加载预览...');
+  try{
+    const d=await(await fetch('/api/mail/results/'+encFilename+'/preview')).json();
+    if(d.status==='success'){
+      document.getElementById('previewFilename').textContent=d.filename||filename;
+      renderPreview(d);
+      document.getElementById('previewModal').classList.add('show');
+    }else toast('预览失败: '+(d.detail||'未知错误'),'error');
+  }catch(e){toast('请求出错','error')}
+  finally{hideLoading()}
+}
+function renderPreview(d){
+  const sheets=d.sheets||[];
+  let tabs='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">';
+  sheets.forEach((s,i)=>{
+    tabs+='<button class="btn '+(i===0?'btn-primary':'btn-ghost')+'" style="padding:4px 12px;font-size:12px" id="ptab-'+i+'" onclick="switchPreviewSheet('+i+')">'+esc(s.sheet_name)+' <span style="opacity:.7">('+s.total_rows+'行)</span></button>';
+  });
+  tabs+='</div>';
+  let bodies='';
+  sheets.forEach((s,i)=>{
+    const headers=s.rows[0]||[];
+    let t='<div id="psheet-'+i+'" style="'+(i===0?'':'display:none')+'"><div style="max-height:420px;overflow:auto;border:1px solid var(--border-l);border-radius:var(--r-sm)">';
+    t+='<table class="rtbl"><thead><tr>';
+    headers.forEach(h=>t+='<th>'+esc(h)+'</th>');
+    t+='</tr></thead><tbody>';
+    s.rows.slice(1).forEach(row=>{
+      t+='<tr>';
+      row.forEach(c=>t+='<td>'+esc(c)+'</td>');
+      t+='</tr>';
+    });
+    t+='</tbody></table></div>';
+    if(s.total_rows>20)t+='<div style="font-size:11px;color:var(--text-4);margin-top:4px">仅预览前 20 行，共 '+s.total_rows+' 行</div>';
+    t+='</div>';
+    bodies+=t;
+  });
+  document.getElementById('previewContent').innerHTML=tabs+bodies;
+}
+function switchPreviewSheet(i){
+  document.querySelectorAll('[id^="psheet-"]').forEach(el=>el.style.display='none');
+  document.getElementById('psheet-'+i).style.display='';
+  document.querySelectorAll('[id^="ptab-"]').forEach(el=>el.className=el.className.replace('btn-primary','btn-ghost'));
+  const tab=document.getElementById('ptab-'+i);
+  if(tab)tab.className=tab.className.replace('btn-ghost','btn-primary');
+}
+function closePreview(){
+  document.getElementById('previewModal').classList.remove('show');
+}
 
 async function loadMailLogs(){
   try{
@@ -252,11 +309,14 @@ async function loadMailResults(){
       const byDate={};
       (d.files||[]).forEach(f=>{const date=(f.mtime||'').split(' ')[0]||'未知日期';if(!byDate[date])byDate[date]=[];byDate[date].push(f)});
       renderDateGroups('mailResults',byDate,rows=>{
-        let h='<table class="rtbl"><thead><tr><th>文件名</th><th style="width:70px">时间</th><th style="width:70px">大小</th><th style="width:80px">操作</th></tr></thead><tbody>';
+        let h='<table class="rtbl"><thead><tr><th>文件名</th><th style="width:70px">时间</th><th style="width:70px">大小</th><th style="width:140px">操作</th></tr></thead><tbody>';
         rows.forEach(f=>{
           const enc=encodeURIComponent(f.filename);
           h+='<tr><td>'+esc(f.filename)+'</td><td style="color:var(--text-4)">'+esc((f.mtime||'').split(' ')[1]||'')+'</td><td style="color:var(--text-4)">'+(f.size/1024).toFixed(1)+'KB</td>'+
-            '<td><a class="btn btn-ghost" style="padding:3px 10px;font-size:12px;text-decoration:none" href="/api/mail/results/'+enc+'">下载</a></td></tr>';
+            '<td style="white-space:nowrap">'+
+            '<button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="previewResult(\''+enc+'\',\''+esc(f.filename)+'\')">预览</button> '+
+            '<a class="btn btn-ghost" style="padding:3px 10px;font-size:12px;text-decoration:none" href="/api/mail/results/'+enc+'">下载</a>'+
+            '</td></tr>';
         });
         return h+'</tbody></table>';
       });

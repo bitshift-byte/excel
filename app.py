@@ -626,6 +626,27 @@ async def download_mail_result(filename: str):
     )
 
 
+@app.get("/api/mail/results/{filename}/preview")
+async def preview_mail_result(filename: str):
+    safe = os.path.basename(filename)
+    path = os.path.join(OUTPUT_DIR, safe)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    import openpyxl
+    wb = openpyxl.load_workbook(path, read_only=True)
+    sheets = []
+    for sname in wb.sheetnames:
+        ws = wb[sname]
+        rows = []
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if i >= 20:
+                break
+            rows.append([serialize_cell(c) for c in row])
+        sheets.append({"sheet_name": sname, "rows": rows, "total_rows": ws.max_row})
+    wb.close()
+    return JSONResponse(content={"status": "success", "filename": safe, "sheets": sheets})
+
+
 @app.get("/api/mail/tasks")
 async def mail_tasks():
     return JSONResponse(content={"status": "success", "tasks": mail_reader.load_tasks()})
