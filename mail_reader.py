@@ -13,7 +13,7 @@ from email.header import decode_header
 from typing import List, Set
 from collections import deque
 
-from merger import merge_files
+from merger import merge_files, _base_dir
 
 
 # ---------- 纯逻辑（可测试） ----------
@@ -186,7 +186,7 @@ def load_config(path: str) -> dict:
         return json.load(f)
 
 
-TASKS_FILE = "data/tasks.json"
+TASKS_FILE = os.path.join(_base_dir(), "data", "tasks.json")
 MAX_TASKS = 200
 
 
@@ -242,6 +242,8 @@ def process_once(cfg: dict, force: bool = False) -> int:
     since = target
     before = target + datetime.timedelta(days=1)
     uids_file = cfg.get("processed_uids_file", "data/processed_uids.json")
+    if not os.path.isabs(uids_file):
+        uids_file = os.path.join(_base_dir(), uids_file)
     processed = set() if force else load_processed_uids(uids_file)
     output_dir = cfg.get("output_dir", "output")
 

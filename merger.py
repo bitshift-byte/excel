@@ -1,5 +1,6 @@
 """合并核心逻辑（从 app.py 抽出，供 Web 与邮件读取器共用）"""
 import os
+import sys
 import json
 import hashlib
 import datetime
@@ -12,7 +13,21 @@ import xlrd
 PREVIEW_MAX_ROWS = 200
 SAMPLE_ROWS = 10
 
-RULES_FILE = os.path.join(os.path.dirname(__file__), "rules.json")
+
+def _base_dir() -> str:
+    """可写目录：PyInstaller 打包后为 exe 同级目录，开发时为项目目录"""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _resource_path(relative: str) -> str:
+    """只读资源路径：PyInstaller 打包后在 sys._MEIPASS 临时目录，开发时为项目目录"""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, relative)
+
+
+RULES_FILE = os.path.join(_base_dir(), "rules.json")
 
 # ===================== 规则管理 =====================
 
@@ -214,7 +229,7 @@ def apply_value_mappings(row_dict: dict, std_name: str, value_mappings: list, fi
 
 # ===================== 行政区划数据 =====================
 
-REGIONS_FILE = os.path.join(os.path.dirname(__file__), "china_regions.json")
+REGIONS_FILE = _resource_path("china_regions.json")
 
 
 def build_region_keywords() -> Dict[str, list]:

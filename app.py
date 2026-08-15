@@ -38,11 +38,13 @@ from merger import (
     match_row_province,
     PREVIEW_MAX_ROWS,
     merge_files,
+    _base_dir,
+    _resource_path,
 )
 
 import mail_reader
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+DATA_DIR = os.path.join(_base_dir(), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 MAIL_CONFIG_FILE = os.path.join(DATA_DIR, "mail_config.json")
 
@@ -58,10 +60,10 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Excel 合并筛选系统", lifespan=lifespan)
-app.mount("/static", StaticFiles(directory="templates/static"), name="static")
+app.mount("/static", StaticFiles(directory=_resource_path("templates/static")), name="static")
 
-UPLOAD_DIR = "uploads"
-OUTPUT_DIR = "output"
+UPLOAD_DIR = os.path.join(_base_dir(), "uploads")
+OUTPUT_DIR = os.path.join(_base_dir(), "output")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -172,7 +174,7 @@ def get_current_user(request: Request) -> Optional[dict]:
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page():
-    with open("templates/login.html", "r", encoding="utf-8") as f:
+    with open(_resource_path("templates/login.html"), "r", encoding="utf-8") as f:
         return f.read()
 
 
@@ -377,7 +379,7 @@ async def parse_rule_excel(files: List[UploadFile] = File(...)):
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    with open("templates/index.html", "r", encoding="utf-8") as f:
+    with open(_resource_path("templates/index.html"), "r", encoding="utf-8") as f:
         return f.read()
 
 
@@ -386,13 +388,13 @@ async def mail_page(request: Request):
     user = get_current_user(request)
     if not user or user["role"] != "admin":
         return RedirectResponse("/mail/results", status_code=302)
-    with open("templates/mail.html", "r", encoding="utf-8") as f:
+    with open(_resource_path("templates/mail.html"), "r", encoding="utf-8") as f:
         return f.read()
 
 
 @app.get("/mail/results", response_class=HTMLResponse)
 async def mail_results_page(request: Request):
-    with open("templates/results.html", "r", encoding="utf-8") as f:
+    with open(_resource_path("templates/results.html"), "r", encoding="utf-8") as f:
         return f.read()
 
 
@@ -653,5 +655,17 @@ async def mail_tasks():
 
 
 if __name__ == "__main__":
+    import sys
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = 8000
+    if getattr(sys, "frozen", False):
+        import threading
+        import webbrowser
+
+        def _open_browser():
+            import time
+            time.sleep(2)
+            webbrowser.open(f"http://127.0.0.1:{port}")
+
+        threading.Thread(target=_open_browser, daemon=True).start()
+    uvicorn.run(app, host="0.0.0.0", port=port)
