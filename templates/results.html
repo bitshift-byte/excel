@@ -183,16 +183,32 @@ async function loadMailResults(){
       const el=document.getElementById('mailResults');
       const files=data.files||[];
       if(files.length===0){el.innerHTML='<div style="color:var(--text-4);font-size:13px;padding:8px 0">暂无结果文件</div>';return}
-      el.innerHTML=files.map(f=>{
-        const enc=encodeURIComponent(f.filename);
-        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-l)">'+
-          '<svg style="width:16px;height:16px;color:var(--primary);flex-shrink:0"><use href="#i-file"/></svg>'+
-          '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:13px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(f.filename)+'</div>'+
-          '<div style="font-size:11px;color:var(--text-4)">'+esc(f.mtime)+' · '+(f.size/1024).toFixed(1)+'KB</div></div>'+
-          '<a class="btn btn-ghost" style="padding:4px 12px;font-size:12px;text-decoration:none" href="/api/mail/results/'+enc+'">下载</a>'+
-          '</div>';
-      }).join('');
+      const byDate={};
+      files.forEach(f=>{
+        const date=(f.mtime||'').split(' ')[0]||'未知日期';
+        if(!byDate[date])byDate[date]=[];
+        byDate[date].push(f);
+      });
+      const dates=Object.keys(byDate).sort().reverse();
+      let html='';
+      dates.forEach(date=>{
+        const rows=byDate[date];
+        html+='<div style="font-weight:700;margin:14px 0 8px;color:var(--primary);display:flex;align-items:center;gap:8px">'+
+          '<svg style="width:16px;height:16px"><use href="#i-download"/></svg> '+esc(date)+
+          '<span class="badge badge-primary">'+rows.length+' 个文件</span></div>';
+        html+='<table class="rtbl"><thead><tr><th>文件名</th><th style="width:80px">时间</th><th style="width:70px">大小</th><th style="width:80px">操作</th></tr></thead><tbody>';
+        rows.forEach(f=>{
+          const enc=encodeURIComponent(f.filename);
+          html+='<tr>'+
+            '<td>'+esc(f.filename)+'</td>'+
+            '<td style="color:var(--text-4)">'+esc((f.mtime||'').split(' ')[1]||'')+'</td>'+
+            '<td style="color:var(--text-4)">'+(f.size/1024).toFixed(1)+'KB</td>'+
+            '<td><a class="btn btn-ghost" style="padding:3px 10px;font-size:12px;text-decoration:none" href="/api/mail/results/'+enc+'">下载</a></td>'+
+            '</tr>';
+        });
+        html+='</tbody></table>';
+      });
+      el.innerHTML=html;
     }
   }catch(e){}
 }
