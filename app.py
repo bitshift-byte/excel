@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from merger import (
@@ -56,6 +57,7 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Excel 合并筛选系统", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="templates/static"), name="static")
 
 UPLOAD_DIR = "uploads"
 OUTPUT_DIR = "output"
@@ -294,6 +296,12 @@ async def parse_rule_excel(files: List[UploadFile] = File(...)):
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     with open("templates/index.html", "r", encoding="utf-8") as f:
+        return f.read()
+
+
+@app.get("/mail", response_class=HTMLResponse)
+async def mail_page(request: Request):
+    with open("templates/mail.html", "r", encoding="utf-8") as f:
         return f.read()
 
 
