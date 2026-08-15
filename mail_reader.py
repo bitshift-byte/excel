@@ -187,7 +187,7 @@ def load_config(path: str) -> dict:
 
 
 TASKS_FILE = "data/tasks.json"
-MAX_TASKS = 50
+MAX_TASKS = 200
 
 
 def load_tasks(path: str = TASKS_FILE) -> list:
