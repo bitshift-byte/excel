@@ -15,9 +15,15 @@ SAMPLE_ROWS = 10
 
 
 def _base_dir() -> str:
-    """可写目录：PyInstaller 打包后为 exe 同级目录，开发时为项目目录"""
+    """可写数据目录：打包后写入固定的用户数据目录，开发时为项目目录"""
     if getattr(sys, "frozen", False):
-        return os.path.dirname(sys.executable)
+        if os.name == "nt":
+            appdata = os.environ.get("APPDATA")
+            base = os.path.join(appdata, "ExcelMerger") if appdata else os.path.dirname(sys.executable)
+        else:
+            base = os.path.dirname(sys.executable)
+        os.makedirs(base, exist_ok=True)
+        return base
     return os.path.dirname(os.path.abspath(__file__))
 
 

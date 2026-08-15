@@ -246,6 +246,8 @@ def process_once(cfg: dict, force: bool = False) -> int:
         uids_file = os.path.join(_base_dir(), uids_file)
     processed = set() if force else load_processed_uids(uids_file)
     output_dir = cfg.get("output_dir", "output")
+    if not os.path.isabs(output_dir):
+        output_dir = os.path.join(_base_dir(), output_dir)
 
     log(f"开始一轮：搜索 {target} 的邮件")
     imap = connect_imap(cfg["imap_host"], cfg["email"], cfg["auth_code"])
