@@ -491,6 +491,41 @@ async def run_mail_once():
     return JSONResponse(content={"status": "success", "handled": handled, "logs": mail_reader.get_logs()})
 
 
+@app.get("/api/mail/results")
+async def mail_results():
+    files = []
+    if os.path.isdir(OUTPUT_DIR):
+        for f in os.listdir(OUTPUT_DIR):
+            if f.startswith("邮件合并") and f.endswith(".xlsx"):
+                path = os.path.join(OUTPUT_DIR, f)
+                st = os.stat(path)
+                files.append({
+                    "filename": f,
+                    "mtime": datetime.datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                    "size": st.st_size,
+                })
+    files.sort(key=lambda x: x["mtime"], reverse=True)
+    return JSONResponse(content={"status": "success", "files": files})
+
+
+@app.get("/api/mail/results/{filename}")
+async def download_mail_result(filename: str):
+    safe = os.path.basename(filename)
+    path = os.path.join(OUTPUT_DIR, safe)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=safe,
+    )
+
+
+@app.get("/api/mail/tasks")
+async def mail_tasks():
+    return JSONResponse(content={"status": "success", "tasks": mail_reader.load_tasks()})
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

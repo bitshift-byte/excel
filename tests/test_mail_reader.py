@@ -1,6 +1,5 @@
 from mail_reader import matches_keywords, is_excel_attachment, filter_new_uids
 
-
 def test_matches_keywords_or():
     assert matches_keywords("8月总表数据", ["总表", "月报"]) is True
     assert matches_keywords("客户月报", ["总表", "月报"]) is True
@@ -32,3 +31,22 @@ def test_background_thread_start_stop(monkeypatch):
     assert mail_reader.is_running() is True
     assert mail_reader.stop_background() is True
     assert mail_reader.is_running() is False
+
+
+def test_clean_output_files(tmp_path):
+    import os
+    import datetime
+    from mail_reader import clean_output_files
+    today = datetime.datetime.now().strftime("%Y%m%d")
+    names = [f"邮件合并_湖南_{today}_a.xlsx", f"邮件合并_湖南_{today}_b.xlsx",
+             "邮件合并_湖南_20260814_a.xlsx", "邮件合并_湖南_20260814_b.xlsx"]
+    for f in names:
+        p = os.path.join(tmp_path, f)
+        open(p, "w").close()
+    os.utime(os.path.join(tmp_path, "邮件合并_湖南_20260814_b.xlsx"), (100, 100))
+    clean_output_files(str(tmp_path))
+    remain = sorted(os.listdir(tmp_path))
+    assert f"邮件合并_湖南_{today}_a.xlsx" in remain  # 当天全留
+    assert f"邮件合并_湖南_{today}_b.xlsx" in remain
+    assert "邮件合并_湖南_20260814_b.xlsx" in remain  # 历史留最后一个
+    assert "邮件合并_湖南_20260814_a.xlsx" not in remain  # 历史旧的删除

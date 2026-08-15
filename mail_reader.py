@@ -1,5 +1,6 @@
 """邮件读取器：从 126 邮箱读取 Excel 附件，自动合并筛选。"""
 import os
+import re
 import json
 import time
 import threading
@@ -124,6 +125,50 @@ def load_config(path: str) -> dict:
         return json.load(f)
 
 
+TASKS_FILE = "data/tasks.json"
+MAX_TASKS = 50
+
+
+def load_tasks(path: str = TASKS_FILE) -> list:
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return []
+
+
+def save_tasks(tasks: list, path: str = TASKS_FILE) -> None:
+    d = os.path.dirname(path)
+    if d:
+        os.makedirs(d, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(tasks, f, ensure_ascii=False, indent=2)
+
+
+def clean_output_files(output_dir: str) -> None:
+    if not os.path.isdir(output_dir):
+        return
+    files = [f for f in os.listdir(output_dir) if f.startswith("邮件合并") and f.endswith(".xlsx")]
+    today = datetime.datetime.now().strftime("%Y%m%d")
+    by_date = {}
+    for f in files:
+        m = re.search(r"(\d{8})", f)
+        if not m:
+            continue
+        by_date.setdefault(m.group(1), []).append(f)
+    for date, fs in by_date.items():
+        if date == today:
+            continue
+        fs.sort(key=lambda f: os.path.getmtime(os.path.join(output_dir, f)))
+        for f in fs[:-1]:
+            try:
+                os.remove(os.path.join(output_dir, f))
+            except OSError:
+                pass
+
+
 def process_once(cfg: dict) -> int:
     since = datetime.date.today() - datetime.timedelta(days=max(0, int(cfg.get("days_back", 1)) - 1))
     uids_file = cfg.get("processed_uids_file", "data/processed_uids.json")
@@ -132,6 +177,7 @@ def process_once(cfg: dict) -> int:
 
     log(f"开始一轮：搜索 {since} 之后的邮件")
     imap = connect_imap(cfg["imap_host"], cfg["email"], cfg["auth_code"])
+    task_mails = []
     try:
         uids = search_mails(imap, since)
         new_uids = filter_new_uids(uids, processed)
@@ -145,28 +191,45 @@ def process_once(cfg: dict) -> int:
                 if typ == "OK" and data and data[0]:
                     m = email.message_from_bytes(data[0][1])
                     subject = decode_subject(m.get("Subject", ""))
-                if not matches_keywords(subject, keywords):
-                    log(f"跳过（主题不匹配）: {subject}")
-                    continue
                 with tempfile.TemporaryDirectory() as tmp:
                     files = download_excel_attachments(imap, uid, tmp)
                     if not files:
                         log(f"跳过（无 Excel 附件）: {subject}")
                         continue
-                    result = merge_files(
-                        file_paths=files,
-                        selected_sheets=None,
-                        provinces=cfg.get("provinces", []),
-                        rule_id=cfg.get("rule_id"),
-                        output_dir=output_dir,
-                        output_prefix=cfg.get("output_prefix", "邮件合并"),
-                    )
-                    log(f"处理成功: {subject} → 全量 {result['stats']['total_merged_rows']} 行，筛选 {result['stats']['filtered_rows']} 行")
-                processed.add(uid)
-                handled += 1
+                    attachment_names = [os.path.basename(f).split("_", 1)[-1] for f in files]
+                    matched = matches_keywords(subject, keywords)
+                    if matched:
+                        result = merge_files(
+                            file_paths=files,
+                            selected_sheets=None,
+                            provinces=cfg.get("provinces", []),
+                            rule_id=cfg.get("rule_id"),
+                            output_dir=output_dir,
+                            output_prefix=cfg.get("output_prefix", "邮件合并"),
+                        )
+                        log(f"处理成功: {subject} → 全量 {result['stats']['total_merged_rows']} 行，筛选 {result['stats']['filtered_rows']} 行")
+                    else:
+                        log(f"跳过（主题不匹配，含附件）: {subject}")
+                    task_mails.append({
+                        "subject": subject,
+                        "attachments": attachment_names,
+                        "processed": matched,
+                    })
+                    if matched:
+                        processed.add(uid)
+                        handled += 1
             except Exception as e:
                 log(f"处理失败: {uid.decode()} - {e}")
         save_processed_uids(uids_file, processed)
+        if task_mails:
+            task = {
+                "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "mails": task_mails,
+            }
+            tasks = load_tasks()
+            tasks.insert(0, task)
+            save_tasks(tasks[:MAX_TASKS])
+        clean_output_files(output_dir)
         log(f"本轮完成，处理 {handled} 封邮件")
         return handled
     finally:
