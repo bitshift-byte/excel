@@ -230,7 +230,7 @@ def clean_output_files(output_dir: str) -> None:
                 pass
 
 
-def process_once(cfg: dict) -> int:
+def process_once(cfg: dict, force: bool = False) -> int:
     date_str = (cfg.get("date") or "").strip()
     if date_str:
         try:
@@ -242,7 +242,7 @@ def process_once(cfg: dict) -> int:
     since = target
     before = target + datetime.timedelta(days=1)
     uids_file = cfg.get("processed_uids_file", "data/processed_uids.json")
-    processed = load_processed_uids(uids_file)
+    processed = set() if force else load_processed_uids(uids_file)
     output_dir = cfg.get("output_dir", "output")
 
     log(f"开始一轮：搜索 {target} 的邮件")
@@ -299,7 +299,8 @@ def process_once(cfg: dict) -> int:
                 log(f"合并完成: 全量 {result['stats']['total_merged_rows']} 行，筛选 {result['stats']['filtered_rows']} 行")
             else:
                 log("无匹配附件，跳过合并")
-        save_processed_uids(uids_file, processed)
+        if not force:
+            save_processed_uids(uids_file, processed)
         if task_mails:
             task = {
                 "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
