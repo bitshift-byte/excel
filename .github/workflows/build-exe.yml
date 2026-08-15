@@ -28,7 +28,11 @@ jobs:
 
       - name: PyInstaller 打包
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name "LX捞数据" --collect-all webview --add-data "china_regions.json;." --add-data "templates;templates" app.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name LX --collect-all webview --add-data "china_regions.json;." --add-data "templates;templates" app.py
+
+      - name: 重命名 exe
+        run: |
+          Rename-Item -Path "dist/LX.exe" -NewName "LX捞数据.exe"
 
       - name: 上传 exe
         uses: actions/upload-artifact@v4
@@ -37,6 +41,14 @@ jobs:
           path: dist/LX捞数据.exe
           retention-days: 30
 
+      - name: 删除旧 Release 和 Tag
+        run: |
+          gh release delete latest --yes 2>$null
+          git push origin --delete latest 2>$null
+          exit 0
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: 发布到 Release
         uses: softprops/action-gh-release@v1
         with:
@@ -44,8 +56,8 @@ jobs:
           tag_name: latest
           name: LX捞数据
           body: |
-            自动构建的 Windows 单文件可执行程序。
-            双击运行后会自动打开浏览器（http://127.0.0.1:8000）。
+            LX捞数据 Windows 单文件版。
+            双击运行后弹出桌面窗口（http://127.0.0.1:8000）。
             首次登录账号 admin / admin123，登录后绑定 IP。
           draft: false
           prerelease: false
