@@ -136,7 +136,7 @@ def search_mails(imap: imaplib.IMAP4_SSL, since_date: datetime.date, before_date
     return results
 
 
-def download_excel_attachments(imap: imaplib.IMAP4_SSL, folder: str, uid: bytes, dest_dir: str) -> List[str]:
+def download_excel_attachments(imap: imaplib.IMAP4_SSL, folder: str, uid: bytes, dest_dir: str, start_idx: int = 0) -> list:
     typ, _ = imap.select(f'"{folder}"', readonly=True)
     if typ != "OK":
         return []
@@ -146,6 +146,7 @@ def download_excel_attachments(imap: imaplib.IMAP4_SSL, folder: str, uid: bytes,
     raw = msg_data[0][1]
     msg = email.message_from_bytes(raw)
     saved = []
+    idx = start_idx
     for part in msg.walk():
         filename = part.get_filename()
         if not filename:
@@ -156,11 +157,12 @@ def download_excel_attachments(imap: imaplib.IMAP4_SSL, folder: str, uid: bytes,
         payload = part.get_payload(decode=True)
         if not payload:
             continue
-        safe_name = f"{uid.decode()}_{decoded}"
+        safe_name = f"{idx}_{decoded}"
         path = os.path.join(dest_dir, safe_name)
         with open(path, "wb") as f:
             f.write(payload)
-        saved.append(path)
+        saved.append((path, decoded))
+        idx += 1
     return saved
 
 
@@ -252,31 +254,29 @@ def process_once(cfg: dict) -> int:
         keywords = cfg.get("subject_keywords", [])
         log(f"共 {len(items)} 封邮件，其中新邮件 {len(new_items)} 封")
         handled = 0
-        for folder, uid in new_items:
-            try:
-                imap.select(f'"{folder}"', readonly=True)
-                typ, data = imap.uid("fetch", uid, "(BODY[HEADER.FIELDS (SUBJECT)])")
-                subject = ""
-                if typ == "OK" and data and data[0]:
-                    m = email.message_from_bytes(data[0][1])
-                    subject = decode_subject(m.get("Subject", ""))
-                with tempfile.TemporaryDirectory() as tmp:
-                    files = download_excel_attachments(imap, folder, uid, tmp)
+        all_files = []
+        with tempfile.TemporaryDirectory() as collect_dir:
+            file_idx = 0
+            for folder, uid in new_items:
+                try:
+                    imap.select(f'"{folder}"', readonly=True)
+                    typ, data = imap.uid("fetch", uid, "(BODY[HEADER.FIELDS (SUBJECT)])")
+                    subject = ""
+                    if typ == "OK" and data and data[0]:
+                        m = email.message_from_bytes(data[0][1])
+                        subject = decode_subject(m.get("Subject", ""))
+                    files = download_excel_attachments(imap, folder, uid, collect_dir, file_idx)
                     if not files:
                         log(f"跳过（无 Excel 附件）: {subject}")
                         continue
-                    attachment_names = [os.path.basename(f).split("_", 1)[-1] for f in files]
+                    attachment_names = [name for _, name in files]
+                    file_idx += len(files)
                     matched = matches_keywords(subject, keywords)
                     if matched:
-                        result = merge_files(
-                            file_paths=files,
-                            selected_sheets=None,
-                            provinces=cfg.get("provinces", []),
-                            rule_id=cfg.get("rule_id"),
-                            output_dir=output_dir,
-                            output_prefix=cfg.get("output_prefix", "邮件合并"),
-                        )
-                        log(f"处理成功: {subject} → 全量 {result['stats']['total_merged_rows']} 行，筛选 {result['stats']['filtered_rows']} 行")
+                        all_files.extend([path for path, _ in files])
+                        processed.add(f"{folder}::{uid.decode()}")
+                        handled += 1
+                        log(f"匹配: {subject} → {len(files)} 个附件")
                     else:
                         log(f"跳过（主题不匹配，含附件）: {subject}")
                     task_mails.append({
@@ -284,11 +284,20 @@ def process_once(cfg: dict) -> int:
                         "attachments": attachment_names,
                         "processed": matched,
                     })
-                    if matched:
-                        processed.add(f"{folder}::{uid.decode()}")
-                        handled += 1
-            except Exception as e:
-                log(f"处理失败: {uid.decode()} - {e}")
+                except Exception as e:
+                    log(f"处理失败: {uid.decode()} - {e}")
+            if all_files:
+                result = merge_files(
+                    file_paths=all_files,
+                    selected_sheets=None,
+                    provinces=cfg.get("provinces", []),
+                    rule_id=cfg.get("rule_id"),
+                    output_dir=output_dir,
+                    output_prefix=cfg.get("output_prefix", "邮件合并"),
+                )
+                log(f"合并完成: 全量 {result['stats']['total_merged_rows']} 行，筛选 {result['stats']['filtered_rows']} 行")
+            else:
+                log("无匹配附件，跳过合并")
         save_processed_uids(uids_file, processed)
         if task_mails:
             task = {
