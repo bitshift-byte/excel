@@ -1,6 +1,7 @@
 """合并核心逻辑（从 app.py 抽出，供 Web 与邮件读取器共用）"""
 import os
 import json
+import hashlib
 import datetime
 from collections import OrderedDict
 from typing import List, Dict, Tuple, Optional
@@ -653,3 +654,199 @@ def read_all_sheets(filepath: str) -> Dict[str, Tuple[tuple, list]]:
         except Exception:
             result = _read_text_table(filepath)
     return result
+
+
+def merge_files(
+    file_paths: List[str],
+    selected_sheets: Optional[List[str]] = None,
+    provinces: Optional[List[str]] = None,
+    rule_id: Optional[str] = None,
+    output_dir: str = "output",
+    output_prefix: str = "合并结果",
+    manual_mappings: Optional[Dict] = None,
+) -> Dict:
+    """合并多个 Excel 文件为统一标准列，可选按省份筛选，输出 Excel。
+
+    selected_sheets: sheet key 列表，格式 f"{文件名}::{sheet名}"；None 表示全选。
+    provinces: 省份列表；None/[] 表示不筛选（全量）。
+    rule_id: 规则 id；None 使用内置默认规则。
+    manual_mappings: 手动列名映射 {sheet_key: {原始列名: 标准列名}}；None 表示仅自动匹配。
+    返回 {output_path, stats, previews}。
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    prov_list = provinces or []
+
+    files_data = {}
+    for fp in file_paths:
+        fname = os.path.basename(fp)
+        files_data[fname] = read_all_sheets(fp)
+
+    active_rule = BUILTIN_RULE
+    std_header_order = [sh["name"] for sh in BUILTIN_RULE["standard_headers"] if sh.get("name", "").strip()]
+    if rule_id:
+        for r in load_rules():
+            if r["id"] == rule_id:
+                active_rule = r
+                std_header_order = [sh["name"] for sh in r["standard_headers"] if sh.get("name", "").strip()]
+                break
+
+    # selected_sheets 为 None 时全选所有 sheet
+    if selected_sheets is None:
+        selected_set = set()
+        for fname, sheets in files_data.items():
+            for sname in sheets:
+                selected_set.add(f"{fname}::{sname}")
+    else:
+        selected_set = set(selected_sheets)
+
+    std_col_set = set(std_header_order)
+    all_columns = list(std_header_order)
+
+    # 合并所有数据行
+    merged_rows = []
+    for fname, sheets in files_data.items():
+        for sname, (headers, data_rows) in sheets.items():
+            key = f"{fname}::{sname}"
+            if key not in selected_set:
+                continue
+            auto_map_list = match_columns_to_rule(headers, active_rule)
+            manual_map = (manual_mappings or {}).get(key, {})
+            mapped_headers = []
+            assigned_std = set()
+            for i, h in enumerate(headers):
+                hs = str(h) if h else ""
+                manual_target = manual_map.get(hs, "")
+                std_name = None
+                if manual_target and manual_target in std_col_set and manual_target not in assigned_std:
+                    std_name = manual_target
+                if not std_name and i < len(auto_map_list):
+                    auto_std = auto_map_list[i][1] if auto_map_list[i] else None
+                    if auto_std and auto_std in std_col_set and auto_std not in assigned_std:
+                        std_name = auto_std
+                if not std_name and hs in std_col_set and hs not in assigned_std:
+                    std_name = hs
+                if std_name:
+                    mapped_headers.append(std_name)
+                    assigned_std.add(std_name)
+                else:
+                    mapped_headers.append(None)
+            for row in data_rows:
+                row_dict = {}
+                for idx, h in enumerate(mapped_headers):
+                    if h is None:
+                        continue
+                    row_dict[h] = row[idx] if idx < len(row) else None
+                for sh in active_rule.get("standard_headers", []):
+                    vm = sh.get("value_mappings")
+                    if vm:
+                        apply_value_mappings(row_dict, sh["name"], vm, fname)
+                merged_rows.append(row_dict)
+
+    # 对齐 + 去重 + 过滤非法交货号
+    aligned = []
+    seen_keys = set()
+    for row in merged_rows:
+        aligned_row = {col: (row.get(col) if row.get(col) is not None else "") for col in all_columns}
+        jh_val = str(aligned_row.get("交货", "")).strip()
+        if jh_val and not jh_val.isdigit():
+            continue
+        if not jh_val:
+            continue
+        dedup_key = (jh_val, str(aligned_row.get("项目", "")).strip())
+        if dedup_key in seen_keys:
+            continue
+        seen_keys.add(dedup_key)
+        aligned.append(aligned_row)
+
+    # 省份筛选
+    if prov_list:
+        filtered = [row for row in aligned if match_row_province(row, prov_list)]
+    else:
+        filtered = aligned
+
+    # 构建多 Sheet 输出
+    wb = openpyxl.Workbook()
+    output_headers = ["售达方" if h == "售达方的名字" else h for h in all_columns]
+
+    ws1 = wb.active
+    ws1.title = "全量数据"
+    ws1.append(output_headers)
+    for row in aligned:
+        ws1.append([row.get(h, "") for h in all_columns])
+
+    ws3 = wb.create_sheet("筛选数据")
+    ws3.append(output_headers)
+    for row in filtered:
+        ws3.append([row.get(h, "") for h in all_columns])
+
+    p4_headers, p4_data, text_dates = build_pivot_by_delivery(filtered)
+    ws4 = wb.create_sheet("交货汇总")
+    ws4.append(p4_headers)
+    for row in p4_data:
+        ws4.append(row)
+
+    p5_headers = list(p4_headers)
+    ws5 = wb.create_sheet("交货汇总_文本日期")
+    ws5.append(p5_headers)
+    for row in p4_data:
+        new_row = list(row)
+        delivery = str(new_row[0]).strip() if new_row[0] else ""
+        if delivery == "(空白)":
+            if len(new_row) > 8:
+                new_row[8] = None
+        elif delivery != "总计":
+            orig = text_dates.get(delivery, {})
+            if len(new_row) > 7 and new_row[7] is None and orig.get("发货日期"):
+                new_row[7] = _format_date_text(orig["发货日期"])
+            if len(new_row) > 8 and new_row[8] is None and orig.get("交货日期"):
+                new_row[8] = _format_date_text(orig["交货日期"])
+            if len(new_row) > 6 and new_row[6] is None and orig.get("街道"):
+                new_row[6] = orig["街道"]
+        ws5.append(new_row)
+
+    p2_headers, p2_data = build_pivot_by_factory_delivery(aligned)
+    ws2 = wb.create_sheet("工厂交货透视")
+    for row in p2_data:
+        ws2.append(row)
+
+    today = datetime.datetime.now().strftime("%Y%m%d")
+    short_hash = hashlib.md5(f"{today}_{len(filtered)}_{datetime.datetime.now().strftime('%H%M%S%f')}".encode()).hexdigest()[:8]
+    prov_short = "_".join(p.replace("省", "").replace("市", "") for p in prov_list[:3]) if prov_list else "全部"
+    output_filename = f"{output_prefix}_{prov_short}_{today}_{short_hash}.xlsx"
+    output_path = os.path.join(output_dir, output_filename)
+    wb.save(output_path)
+    wb.close()
+
+    stats = {
+        "total_merged_rows": len(merged_rows),
+        "total_columns": len(all_columns),
+        "filtered_rows": len(filtered),
+        "provinces": prov_list,
+    }
+
+    previews = []
+    filter_preview_rows = [[row.get(h, "") for h in all_columns] for row in filtered[:PREVIEW_MAX_ROWS]]
+    if filter_preview_rows:
+        previews.append({
+            "sheet_name": "筛选数据",
+            "headers": output_headers,
+            "rows": [[serialize_cell(c) for c in r] for r in filter_preview_rows],
+            "total": len(filtered),
+            "preview_count": len(filter_preview_rows),
+        })
+    previews.append({
+        "sheet_name": "交货汇总",
+        "headers": [str(h) for h in p4_headers],
+        "rows": [[serialize_cell(c) for c in row] for row in p4_data[:PREVIEW_MAX_ROWS]],
+        "total": len(p4_data),
+        "preview_count": min(len(p4_data), PREVIEW_MAX_ROWS),
+    })
+    previews.append({
+        "sheet_name": "工厂交货透视",
+        "headers": [str(h) for h in p2_headers],
+        "rows": [[serialize_cell(c) for c in row] for row in p2_data[:PREVIEW_MAX_ROWS]],
+        "total": len(p2_data),
+        "preview_count": min(len(p2_data), PREVIEW_MAX_ROWS),
+    })
+
+    return {"output_path": output_path, "stats": stats, "previews": previews}
