@@ -214,7 +214,7 @@
     </div>
     <div class="sticky-bar" id="stickyBar3" style="display:none">
       <button class="btn btn-ghost" onclick="goStep(2)">← 重新选择</button>
-      <button class="btn btn-accent" style="flex:1" onclick="window.location.href='/api/download'"><svg><use href="#i-download"/></svg> 下载 Excel</button>
+      <button class="btn btn-accent" style="flex:1" onclick="downloadLatest()"><svg><use href="#i-download"/></svg> 下载 Excel</button>
     </div>
   </div>
 </div>
@@ -262,6 +262,13 @@ const GROUP_COLORS=[
 ];
 
 function esc(s){if(s===null||s===undefined)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function downloadLatest(){
+  if(window.pywebview&&window.pywebview.api){
+    window.pywebview.api.download_latest().then(r=>{if(!r)toast('已取消下载')}).catch(e=>toast('下载失败','error'));
+  }else{
+    window.location.href='/api/download';
+  }
+}
 let _idMap={},_idCounter=0;
 function safeId(s){if(!(s in _idMap)){_idMap[s]='k'+(++_idCounter)}return _idMap[s]}
 function unscId(s){for(let k in _idMap){if(_idMap[k]===s)return k}return s}

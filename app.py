@@ -663,6 +663,37 @@ if __name__ == "__main__":
         import threading
         import webview
 
+        class Api:
+            def _save(self, src, save_filename):
+                import os
+                import shutil
+                if not os.path.isfile(src):
+                    return None
+                dest = webview.windows[0].create_file_dialog(
+                    webview.FileDialog.SAVE,
+                    directory=os.path.expanduser("~"),
+                    save_filename=save_filename,
+                )
+                if not dest:
+                    return None
+                if isinstance(dest, (tuple, list)):
+                    dest = dest[0]
+                shutil.copy(src, dest)
+                return dest
+
+            def download_file(self, filename):
+                import os
+                safe = os.path.basename(filename)
+                return self._save(os.path.join(OUTPUT_DIR, safe), safe)
+
+            def download_latest(self):
+                import os
+                files = [f for f in os.listdir(OUTPUT_DIR) if f.endswith(".xlsx")]
+                if not files:
+                    return None
+                files.sort(key=lambda f: os.path.getmtime(os.path.join(OUTPUT_DIR, f)), reverse=True)
+                return self._save(os.path.join(OUTPUT_DIR, files[0]), files[0])
+
         def _run_server():
             uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
@@ -673,6 +704,7 @@ if __name__ == "__main__":
             width=1280,
             height=820,
             min_size=(900, 600),
+            js_api=Api(),
         )
         webview.start()
     else:

@@ -242,6 +242,15 @@ function confirmRun(){
   closeRunModal();
   runMailOnce(date);
 }
+function downloadFile(filename){
+  if(window.pywebview && window.pywebview.api){
+    window.pywebview.api.download_file(filename).then(r=>{
+      if(!r) toast('已取消下载');
+    }).catch(e=>toast('下载失败','error'));
+  }else{
+    window.location.href='/api/mail/results/'+encodeURIComponent(filename);
+  }
+}
 async function previewResult(encFilename, filename){
   showLoading('正在加载预览...');
   try{
@@ -315,7 +324,7 @@ async function loadMailResults(){
           h+='<tr><td>'+esc(f.filename)+'</td><td style="color:var(--text-4)">'+esc((f.mtime||'').split(' ')[1]||'')+'</td><td style="color:var(--text-4)">'+(f.size/1024).toFixed(1)+'KB</td>'+
             '<td style="white-space:nowrap">'+
             '<button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="previewResult(\''+enc+'\',\''+esc(f.filename)+'\')">预览</button> '+
-            '<a class="btn btn-ghost" style="padding:3px 10px;font-size:12px;text-decoration:none" href="/api/mail/results/'+enc+'">下载</a>'+
+            '<button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" data-filename="'+esc(f.filename)+'" onclick="downloadFile(this.dataset.filename)">下载</button>'+
             '</td></tr>';
         });
         return h+'</tbody></table>';
