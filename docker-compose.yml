@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     environment:
       - TZ=Asia/Shanghai
+      - PYTHONUNBUFFERED=1
     volumes:
       # 上传文件持久化
       - ./uploads:/app/uploads
@@ -13,6 +14,8 @@ services:
       - ./output:/app/output
       # 用户自定义规则持久化
       - ./rules.json:/app/rules.json
+      # 邮件读取器配置持久化
+      - ./mail_config.json:/app/mail_config.json
     expose:
       - "8000"            # 仅对 nginx 可见，不对外暴露
 

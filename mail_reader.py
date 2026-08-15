@@ -60,11 +60,17 @@ def filter_new_uids(uids: List[bytes], processed: Set[bytes]) -> List[bytes]:
 def connect_imap(host: str, email_addr: str, auth_code: str) -> imaplib.IMAP4_SSL:
     imap = imaplib.IMAP4_SSL(host, 993)
     imap.login(email_addr, auth_code)
+    # 网易邮箱要求客户端先发送非空 ID（RFC 2971），否则 SELECT 被拒
+    imaplib.Commands["ID"] = ("AUTH",)
+    imap._simple_command("ID", '("name" "ExcelMerger" "version" "1.0.0" "vendor" "ExcelMerger")')
     return imap
 
 
 def search_mails(imap: imaplib.IMAP4_SSL, since_date: datetime.date) -> List[bytes]:
-    imap.select("INBOX")
+    typ, data = imap.select("INBOX")
+    if typ != "OK":
+        detail = data[0].decode(errors="replace") if data and data[0] else "未知错误"
+        raise RuntimeError(f"选择收件箱失败: {detail}")
     date_str = since_date.strftime("%d-%b-%Y")
     typ, data = imap.uid("search", None, f"(SINCE {date_str})")
     if typ != "OK" or not data or not data[0]:
