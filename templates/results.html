@@ -71,7 +71,7 @@
           <div class="spacer"></div>
           <button class="btn btn-ghost" style="padding:7px 16px;font-size:13px" onclick="startMail()">启动轮询</button>
           <button class="btn btn-ghost" style="padding:7px 16px;font-size:13px" onclick="stopMail()">停止轮询</button>
-          <button class="btn btn-primary btn-lg" onclick="runMailOnce()"><svg style="width:16px;height:16px"><use href="#i-zap"/></svg> 立即执行</button>
+          <button class="btn btn-primary btn-lg" onclick="openRunModal()"><svg style="width:16px;height:16px"><use href="#i-zap"/></svg> 立即执行</button>
         </div>
       </div>
 
@@ -146,6 +146,20 @@
 
 <div class="toast" id="toast"></div>
 
+<div class="modal-overlay" id="runModal" onclick="if(event.target===this)closeRunModal()">
+  <div class="modal-box">
+    <h3>选择处理日期</h3>
+    <div class="modal-content">
+      <p>选择要处理的邮件日期，会捞取该日期一整天的邮件并合并。</p>
+      <input type="date" id="runDate" class="rule-form-input" style="margin-top:12px;padding:10px 14px">
+    </div>
+    <div style="display:flex;gap:10px;margin-top:20px">
+      <button class="btn btn-ghost" style="flex:1" onclick="closeRunModal()">取消</button>
+      <button class="btn btn-primary" style="flex:1" onclick="confirmRun()">立即执行</button>
+    </div>
+  </div>
+</div>
+
 <script>
 function esc(s){if(s===null||s===undefined)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function toast(msg,type){const t=document.getElementById('toast');const icon=type==='error'?'<svg><use href="#i-alert"/></svg>':'<svg><use href="#i-check"/></svg>';t.innerHTML=icon+msg;t.className='toast show '+(type||'success');setTimeout(()=>t.classList.remove('show'),3000)}
@@ -198,13 +212,26 @@ async function stopMail(){
   showLoading('正在停止...');
   try{const d=await(await fetch('/api/mail/stop',{method:'POST'})).json();updateMailStatus(d.running);toast('已停止轮询')}catch(e){toast('请求出错','error')}finally{hideLoading()}
 }
-async function runMailOnce(){
+async function runMailOnce(date){
   showLoading('正在立即执行，可能需要几十秒...');
   try{
-    const d=await(await fetch('/api/mail/run',{method:'POST'})).json();
+    const d=await(await fetch('/api/mail/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date||''})})).json();
     if(d.status==='success'){toast('执行完成，处理 '+d.handled+' 封邮件');loadMailLogs();loadMailResults();loadMailTasks();}
     else toast('执行失败: '+(d.detail||'未知错误'),'error');
   }catch(e){toast('请求出错','error')}finally{hideLoading()}
+}
+function openRunModal(){
+  const today=new Date().toISOString().split('T')[0];
+  document.getElementById('runDate').value=today;
+  document.getElementById('runModal').classList.add('show');
+}
+function closeRunModal(){
+  document.getElementById('runModal').classList.remove('show');
+}
+function confirmRun(){
+  const date=document.getElementById('runDate').value;
+  closeRunModal();
+  runMailOnce(date);
 }
 
 async function loadMailLogs(){

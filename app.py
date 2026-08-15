@@ -582,10 +582,16 @@ async def mail_logs():
 
 
 @app.post("/api/mail/run")
-async def run_mail_once():
+async def run_mail_once(request: Request):
     if not os.path.exists(MAIL_CONFIG_FILE):
         raise HTTPException(status_code=400, detail="请先保存邮件配置")
     cfg = mail_reader.load_config(MAIL_CONFIG_FILE)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if body and body.get("date"):
+        cfg["date"] = body["date"]
     handled = await asyncio.to_thread(mail_reader.process_once, cfg, True)
     return JSONResponse(content={"status": "success", "handled": handled, "logs": mail_reader.get_logs()})
 
