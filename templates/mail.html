@@ -71,10 +71,10 @@
       <input type="text" class="rule-form-input" id="mailProvinces" placeholder="湖南省, 江苏省"></div>
 
     <div style="display:flex;gap:16px">
+      <div class="rule-form-group" style="flex:1"><label class="rule-form-label">处理日期（留空 = 今天）</label>
+        <input type="date" class="rule-form-input" id="mailDate"></div>
       <div class="rule-form-group" style="flex:1"><label class="rule-form-label">轮询间隔（秒）</label>
         <input type="number" class="rule-form-input" id="mailInterval" value="3600"></div>
-      <div class="rule-form-group" style="flex:1"><label class="rule-form-label">日期回溯（天，1=今天）</label>
-        <input type="number" class="rule-form-input" id="mailDaysBack" value="1"></div>
     </div>
 
     <div style="display:flex;gap:10px;margin-top:20px">
@@ -133,7 +133,7 @@ async function loadMailConfig(){
       document.getElementById('mailKeywords').value=(cfg.subject_keywords||[]).join(', ');
       document.getElementById('mailProvinces').value=(cfg.provinces||[]).join(', ');
       document.getElementById('mailInterval').value=cfg.poll_interval_seconds||3600;
-      document.getElementById('mailDaysBack').value=cfg.days_back||1;
+      document.getElementById('mailDate').value=cfg.date||'';
       updateMailStatus(data.running);
     }
   }catch(e){toast('加载邮件配置失败','error')}
@@ -147,7 +147,7 @@ async function saveMailConfig(){
     subject_keywords:document.getElementById('mailKeywords').value.split(',').map(s=>s.trim()).filter(Boolean),
     provinces:document.getElementById('mailProvinces').value.split(',').map(s=>s.trim()).filter(Boolean),
     poll_interval_seconds:parseInt(document.getElementById('mailInterval').value)||3600,
-    days_back:parseInt(document.getElementById('mailDaysBack').value)||1,
+    date:document.getElementById('mailDate').value,
     output_dir:'output',
     output_prefix:'邮件合并',
     processed_uids_file:'data/processed_uids.json',

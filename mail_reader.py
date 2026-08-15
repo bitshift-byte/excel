@@ -113,16 +113,21 @@ def connect_imap(host: str, email_addr: str, auth_code: str) -> imaplib.IMAP4_SS
     return imap
 
 
-def search_mails(imap: imaplib.IMAP4_SSL, since_date: datetime.date) -> list:
+def search_mails(imap: imaplib.IMAP4_SSL, since_date: datetime.date, before_date: datetime.date = None) -> list:
     """搜索所有文件夹（排除系统文件夹），返回 [(folder, uid), ...]"""
-    date_str = since_date.strftime("%d-%b-%Y")
+    since_str = since_date.strftime("%d-%b-%Y")
+    if before_date:
+        before_str = before_date.strftime("%d-%b-%Y")
+        criteria = f"(SINCE {since_str} BEFORE {before_str})"
+    else:
+        criteria = f"(SINCE {since_str})"
     results = []
     for folder, _decoded in list_mail_folders(imap):
         try:
             typ, _ = imap.select(f'"{folder}"', readonly=True)
             if typ != "OK":
                 continue
-            typ, data = imap.uid("search", None, f"(SINCE {date_str})")
+            typ, data = imap.uid("search", None, criteria)
             if typ == "OK" and data and data[0]:
                 for uid in data[0].split():
                     results.append((folder, uid))
@@ -224,21 +229,30 @@ def clean_output_files(output_dir: str) -> None:
 
 
 def process_once(cfg: dict) -> int:
-    since = datetime.date.today() - datetime.timedelta(days=max(0, int(cfg.get("days_back", 1)) - 1))
+    date_str = (cfg.get("date") or "").strip()
+    if date_str:
+        try:
+            target = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            target = datetime.date.today()
+    else:
+        target = datetime.date.today()
+    since = target
+    before = target + datetime.timedelta(days=1)
     uids_file = cfg.get("processed_uids_file", "data/processed_uids.json")
     processed = load_processed_uids(uids_file)
     output_dir = cfg.get("output_dir", "output")
 
-    log(f"开始一轮：搜索 {since} 之后的邮件")
+    log(f"开始一轮：搜索 {target} 的邮件")
     imap = connect_imap(cfg["imap_host"], cfg["email"], cfg["auth_code"])
     task_mails = []
     try:
-        uids = search_mails(imap, since)
-        new_uids = filter_new_uids(uids, processed)
+        items = search_mails(imap, since, before)
+        new_items = filter_new_uids(items, processed)
         keywords = cfg.get("subject_keywords", [])
-        log(f"共 {len(uids)} 封邮件，其中新邮件 {len(new_uids)} 封")
+        log(f"共 {len(items)} 封邮件，其中新邮件 {len(new_items)} 封")
         handled = 0
-        for folder, uid in new_uids:
+        for folder, uid in new_items:
             try:
                 imap.select(f'"{folder}"', readonly=True)
                 typ, data = imap.uid("fetch", uid, "(BODY[HEADER.FIELDS (SUBJECT)])")
