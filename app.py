@@ -68,11 +68,42 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # ===================== 认证 =====================
 
-# 用户数据库（演示用，实际可对接数据库）
-USERS = {
-    "admin": {"password": "admin123", "name": "管理员", "role": "admin"},
-    "user": {"password": "user123", "name": "普通用户", "role": "user"},
-}
+# 用户数据库（持久化到 data/users.json，含 IP 绑定）
+USERS_FILE = os.path.join(DATA_DIR, "users.json")
+
+DEFAULT_USERS = [
+    {"username": "admin", "password": "admin123", "name": "管理员", "role": "admin", "ip": ""},
+    {"username": "user1", "password": "user123", "name": "用户一", "role": "user", "ip": ""},
+    {"username": "user2", "password": "user123", "name": "用户二", "role": "user", "ip": ""},
+]
+
+
+def load_users() -> dict:
+    if not os.path.exists(USERS_FILE):
+        users = {u["username"]: dict(u) for u in DEFAULT_USERS}
+        save_users(users)
+        return users
+    try:
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {u["username"]: u for u in data}
+    except (json.JSONDecodeError, IOError):
+        return {u["username"]: dict(u) for u in DEFAULT_USERS}
+
+
+def save_users(users: dict) -> None:
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(list(users.values()), f, ensure_ascii=False, indent=2)
+
+
+def get_client_ip(request: Request) -> str:
+    xff = request.headers.get("X-Forwarded-For")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else ""
+
+
+USERS = load_users()
 
 # session token → username 映射（内存存储，重启失效）
 SESSIONS: Dict[str, str] = {}
@@ -140,6 +171,18 @@ async def login_api(request: Request):
     user = USERS.get(username)
     if not user or user["password"] != password:
         return JSONResponse({"status": "error", "detail": "用户名或密码错误"}, status_code=401)
+
+    client_ip = get_client_ip(request)
+    bound_ip = user.get("ip", "")
+    if bound_ip:
+        if client_ip != bound_ip:
+            return JSONResponse(
+                {"status": "error", "detail": f"该账号已绑定 IP {bound_ip}，当前登录 IP {client_ip} 不允许"},
+                status_code=403,
+            )
+    else:
+        user["ip"] = client_ip
+        save_users(USERS)
 
     token = secrets.token_hex(16)
     SESSIONS[token] = username
