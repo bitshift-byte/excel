@@ -18,10 +18,11 @@ COPY templates/ ./templates/
 COPY china_regions.json ./
 COPY rules.json ./
 COPY mail_config.example.json ./
+COPY entrypoint.sh ./
 
 # 创建上传和输出目录
-RUN mkdir -p uploads output
+RUN mkdir -p uploads output && chmod +x entrypoint.sh
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["./entrypoint.sh"]
