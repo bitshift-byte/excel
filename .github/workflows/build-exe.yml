@@ -28,7 +28,7 @@ jobs:
 
       - name: PyInstaller 打包
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name LX --collect-all webview --add-data "china_regions.json;." --add-data "templates;templates" app.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name LX --icon icon.ico --collect-all webview --add-data "china_regions.json;." --add-data "templates;templates" app.py
 
       - name: 重命名 exe
         run: |
