@@ -3,6 +3,7 @@ import os
 import re
 import json
 import time
+import base64
 import threading
 import imaplib
 import email
@@ -40,24 +41,68 @@ def decode_subject(raw) -> str:
     return "".join(out)
 
 
-def load_processed_uids(path: str) -> Set[bytes]:
+def load_processed_uids(path: str) -> set:
     if not os.path.exists(path):
         return set()
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    return set(x.encode() for x in data)
+    return set(data)
 
 
-def save_processed_uids(path: str, uids: Set[bytes]) -> None:
+def save_processed_uids(path: str, uids: set) -> None:
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(sorted(x.decode() for x in uids), f)
+        json.dump(sorted(uids), f)
 
 
-def filter_new_uids(uids: List[bytes], processed: Set[bytes]) -> List[bytes]:
-    return [u for u in uids if u not in processed]
+def filter_new_uids(items: list, processed: set) -> list:
+    # items 是 [(folder, uid_bytes), ...]，processed 是 {"folder::uid", ...}
+    return [(f, u) for f, u in items if f"{f}::{u.decode()}" not in processed]
 
 
 # ---------- IMAP 交互 ----------
+
+EXCLUDED_FOLDERS = {"草稿箱", "已发送", "已删除", "垃圾邮件", "病毒邮件", "广告邮件", "订阅邮件", "废弃"}
+
+
+def utf7_decode(s: str) -> str:
+    result = []
+    i = 0
+    while i < len(s):
+        if s[i] == '&':
+            end = s.find('-', i)
+            if end == -1:
+                result.append(s[i:])
+                break
+            if end == i + 1:
+                result.append('&')
+            else:
+                b64 = s[i + 1:end].replace(',', '/')
+                try:
+                    raw = base64.b64decode(b64 + '=' * (-len(b64) % 4))
+                    result.append(raw.decode('utf-16-be'))
+                except Exception:
+                    result.append(s[i:end + 1])
+            i = end + 1
+        else:
+            result.append(s[i])
+            i += 1
+    return ''.join(result)
+
+
+def list_mail_folders(imap: imaplib.IMAP4_SSL) -> list:
+    """返回 [(folder_raw, folder_decoded), ...]，排除系统文件夹"""
+    typ, folders = imap.list()
+    result = []
+    for f in folders:
+        raw = f.decode('utf-8', errors='replace')
+        m = re.search(r'"([^"]*)"\s*$', raw)
+        folder = m.group(1) if m else raw
+        decoded = utf7_decode(folder)
+        if decoded in EXCLUDED_FOLDERS:
+            continue
+        result.append((folder, decoded))
+    return result
+
 
 def connect_imap(host: str, email_addr: str, auth_code: str) -> imaplib.IMAP4_SSL:
     imap = imaplib.IMAP4_SSL(host, 993)
@@ -68,19 +113,28 @@ def connect_imap(host: str, email_addr: str, auth_code: str) -> imaplib.IMAP4_SS
     return imap
 
 
-def search_mails(imap: imaplib.IMAP4_SSL, since_date: datetime.date) -> List[bytes]:
-    typ, data = imap.select("INBOX")
-    if typ != "OK":
-        detail = data[0].decode(errors="replace") if data and data[0] else "未知错误"
-        raise RuntimeError(f"选择收件箱失败: {detail}")
+def search_mails(imap: imaplib.IMAP4_SSL, since_date: datetime.date) -> list:
+    """搜索所有文件夹（排除系统文件夹），返回 [(folder, uid), ...]"""
     date_str = since_date.strftime("%d-%b-%Y")
-    typ, data = imap.uid("search", None, f"(SINCE {date_str})")
-    if typ != "OK" or not data or not data[0]:
+    results = []
+    for folder, _decoded in list_mail_folders(imap):
+        try:
+            typ, _ = imap.select(f'"{folder}"', readonly=True)
+            if typ != "OK":
+                continue
+            typ, data = imap.uid("search", None, f"(SINCE {date_str})")
+            if typ == "OK" and data and data[0]:
+                for uid in data[0].split():
+                    results.append((folder, uid))
+        except Exception:
+            continue
+    return results
+
+
+def download_excel_attachments(imap: imaplib.IMAP4_SSL, folder: str, uid: bytes, dest_dir: str) -> List[str]:
+    typ, _ = imap.select(f'"{folder}"', readonly=True)
+    if typ != "OK":
         return []
-    return data[0].split()
-
-
-def download_excel_attachments(imap: imaplib.IMAP4_SSL, uid: bytes, dest_dir: str) -> List[str]:
     typ, msg_data = imap.uid("fetch", uid, "(RFC822)")
     if typ != "OK":
         return []
@@ -184,15 +238,16 @@ def process_once(cfg: dict) -> int:
         keywords = cfg.get("subject_keywords", [])
         log(f"共 {len(uids)} 封邮件，其中新邮件 {len(new_uids)} 封")
         handled = 0
-        for uid in new_uids:
+        for folder, uid in new_uids:
             try:
+                imap.select(f'"{folder}"', readonly=True)
                 typ, data = imap.uid("fetch", uid, "(BODY[HEADER.FIELDS (SUBJECT)])")
                 subject = ""
                 if typ == "OK" and data and data[0]:
                     m = email.message_from_bytes(data[0][1])
                     subject = decode_subject(m.get("Subject", ""))
                 with tempfile.TemporaryDirectory() as tmp:
-                    files = download_excel_attachments(imap, uid, tmp)
+                    files = download_excel_attachments(imap, folder, uid, tmp)
                     if not files:
                         log(f"跳过（无 Excel 附件）: {subject}")
                         continue
@@ -216,7 +271,7 @@ def process_once(cfg: dict) -> int:
                         "processed": matched,
                     })
                     if matched:
-                        processed.add(uid)
+                        processed.add(f"{folder}::{uid.decode()}")
                         handled += 1
             except Exception as e:
                 log(f"处理失败: {uid.decode()} - {e}")
