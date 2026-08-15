@@ -39,19 +39,6 @@
 
   <div class="card" style="margin-bottom:16px">
     <div class="card-head">
-      <div class="ch-icon"><svg><use href="#i-mail"/></svg></div>
-      <span class="ch-title">捞取任务</span>
-      <span class="ch-sub">每轮捞到的邮件及附件</span>
-      <div class="ch-spacer"></div>
-      <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="loadMailTasks()">刷新</button>
-    </div>
-    <div class="card-pad" style="padding-top:12px">
-      <div id="mailTasks"></div>
-    </div>
-  </div>
-
-  <div class="card" style="margin-bottom:16px">
-    <div class="card-head">
       <div class="ch-icon"><svg><use href="#i-download"/></svg></div>
       <span class="ch-title">处理结果</span>
       <span class="ch-sub">邮件合并生成的 Excel</span>
@@ -60,6 +47,19 @@
     </div>
     <div class="card-pad" style="padding-top:12px">
       <div id="mailResults"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-head">
+      <div class="ch-icon"><svg><use href="#i-mail"/></svg></div>
+      <span class="ch-title">捞取任务</span>
+      <span class="ch-sub">每轮捞到的邮件及附件</span>
+      <div class="ch-spacer"></div>
+      <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="loadMailTasks()">刷新</button>
+    </div>
+    <div class="card-pad" style="padding-top:12px">
+      <div id="mailTasks"></div>
     </div>
   </div>
 

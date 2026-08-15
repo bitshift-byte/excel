@@ -664,6 +664,7 @@ def merge_files(
     output_dir: str = "output",
     output_prefix: str = "合并结果",
     manual_mappings: Optional[Dict] = None,
+    date_str: Optional[str] = None,
 ) -> Dict:
     """合并多个 Excel 文件为统一标准列，可选按省份筛选，输出 Excel。
 
@@ -818,10 +819,10 @@ def merge_files(
     for row in p2_data:
         ws2.append(row)
 
-    today = datetime.datetime.now().strftime("%Y%m%d")
-    short_hash = hashlib.md5(f"{today}_{len(filtered)}_{datetime.datetime.now().strftime('%H%M%S%f')}".encode()).hexdigest()[:8]
+    day = date_str.replace("-", "") if date_str else datetime.datetime.now().strftime("%Y%m%d")
+    short_hash = hashlib.md5(f"{day}_{len(filtered)}_{datetime.datetime.now().strftime('%H%M%S%f')}".encode()).hexdigest()[:8]
     prov_short = "_".join(p.replace("省", "").replace("市", "") for p in prov_list[:3]) if prov_list else "全部"
-    output_filename = f"{output_prefix}_{prov_short}_{today}_{short_hash}.xlsx"
+    output_filename = f"{output_prefix}_{prov_short}_{day}_{short_hash}.xlsx"
     output_path = os.path.join(output_dir, output_filename)
     wb.save(output_path)
     wb.close()

@@ -294,6 +294,7 @@ def process_once(cfg: dict) -> int:
                     rule_id=cfg.get("rule_id"),
                     output_dir=output_dir,
                     output_prefix=cfg.get("output_prefix", "邮件合并"),
+                    date_str=target.strftime("%Y-%m-%d"),
                 )
                 log(f"合并完成: 全量 {result['stats']['total_merged_rows']} 行，筛选 {result['stats']['filtered_rows']} 行")
             else:
