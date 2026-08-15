@@ -28,21 +28,21 @@ jobs:
 
       - name: PyInstaller 打包
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name ExcelMerger --collect-all webview --add-data "china_regions.json;." --add-data "templates;templates" app.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name "LX捞数据" --collect-all webview --add-data "china_regions.json;." --add-data "templates;templates" app.py
 
       - name: 上传 exe
         uses: actions/upload-artifact@v4
         with:
-          name: ExcelMerger-Windows
-          path: dist/ExcelMerger.exe
+          name: LX捞数据-Windows
+          path: dist/LX捞数据.exe
           retention-days: 30
 
       - name: 发布到 Release
         uses: softprops/action-gh-release@v1
         with:
-          files: dist/ExcelMerger.exe
+          files: dist/LX捞数据.exe
           tag_name: latest
-          name: ExcelMerger Windows 版
+          name: LX捞数据
           body: |
             自动构建的 Windows 单文件可执行程序。
             双击运行后会自动打开浏览器（http://127.0.0.1:8000）。

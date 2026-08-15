@@ -699,7 +699,7 @@ if __name__ == "__main__":
 
         threading.Thread(target=_run_server, daemon=True).start()
         webview.create_window(
-            "Excel 合并平台",
+            "LX捞数据",
             f"http://127.0.0.1:{port}",
             width=1280,
             height=820,
