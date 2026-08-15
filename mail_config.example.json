@@ -1,0 +1,12 @@
+{
+  "imap_host": "imap.126.com",
+  "email": "your_account@126.com",
+  "auth_code": "你的126客户端授权码",
+  "subject_keywords": ["总表", "月报"],
+  "provinces": [],
+  "days_back": 1,
+  "poll_interval_seconds": 3600,
+  "output_dir": "output",
+  "output_prefix": "邮件合并",
+  "processed_uids_file": "processed_uids.json"
+}
