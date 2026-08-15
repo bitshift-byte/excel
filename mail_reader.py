@@ -94,3 +94,71 @@ def download_excel_attachments(imap: imaplib.IMAP4_SSL, uid: bytes, dest_dir: st
             f.write(payload)
         saved.append(path)
     return saved
+
+
+# ---------- 主流程 ----------
+
+def load_config(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def process_once(cfg: dict) -> int:
+    since = datetime.date.today() - datetime.timedelta(days=max(0, int(cfg.get("days_back", 1)) - 1))
+    uids_file = cfg.get("processed_uids_file", "processed_uids.json")
+    processed = load_processed_uids(uids_file)
+    output_dir = cfg.get("output_dir", "output")
+
+    imap = connect_imap(cfg["imap_host"], cfg["email"], cfg["auth_code"])
+    try:
+        uids = search_mails(imap, since)
+        new_uids = filter_new_uids(uids, processed)
+        keywords = cfg.get("subject_keywords", [])
+        handled = 0
+        for uid in new_uids:
+            try:
+                typ, data = imap.uid("fetch", uid, "(BODY[HEADER.FIELDS (SUBJECT)])")
+                subject = ""
+                if typ == "OK" and data and data[0]:
+                    m = email.message_from_bytes(data[0][1])
+                    subject = decode_subject(m.get("Subject", ""))
+                if not matches_keywords(subject, keywords):
+                    continue
+                with tempfile.TemporaryDirectory() as tmp:
+                    files = download_excel_attachments(imap, uid, tmp)
+                    if not files:
+                        continue
+                    merge_files(
+                        file_paths=files,
+                        selected_sheets=None,
+                        provinces=cfg.get("provinces", []),
+                        rule_id=cfg.get("rule_id"),
+                        output_dir=output_dir,
+                        output_prefix=cfg.get("output_prefix", "邮件合并"),
+                    )
+                processed.add(uid)
+                handled += 1
+            except Exception as e:
+                print(f"[mail_reader] 处理邮件 {uid.decode()} 失败: {e}")
+        save_processed_uids(uids_file, processed)
+        return handled
+    finally:
+        imap.logout()
+
+
+def main():
+    cfg_path = os.environ.get("MAIL_CONFIG", "mail_config.json")
+    cfg = load_config(cfg_path)
+    interval = int(cfg.get("poll_interval_seconds", 3600))
+    print(f"[mail_reader] 启动，轮询间隔 {interval}s，配置 {cfg_path}")
+    while True:
+        try:
+            n = process_once(cfg)
+            print(f"[mail_reader] 本轮处理 {n} 封邮件: {datetime.datetime.now()}")
+        except Exception as e:
+            print(f"[mail_reader] 本轮异常: {e}")
+        time.sleep(interval)
+
+
+if __name__ == "__main__":
+    main()
