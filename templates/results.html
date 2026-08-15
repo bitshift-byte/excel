@@ -8,24 +8,12 @@
 <link rel="stylesheet" href="/static/style.css">
 <style>
 .mail-wrap{max-width:1000px;margin:0 auto;padding:24px}
-.mail-top{display:flex;align-items:center;gap:16px;padding:14px 24px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100}
-.mail-top .back{color:var(--text-3);text-decoration:none;font-size:13px;display:flex;align-items:center;gap:6px;font-weight:500}
-.mail-top .back:hover{color:var(--primary)}
-.mail-top .title{font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--text)}
-.mail-user{display:flex;align-items:center;gap:10px}
-.mail-user .avatar{width:32px;height:32px;border-radius:8px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;font-family:var(--font-display)}
-.mail-user .name{font-size:13px;font-weight:600;color:var(--text)}
-.mail-user .role{font-size:11px;color:var(--text-4)}
-.btn-logout{background:none;border:1px solid var(--border);border-radius:6px;padding:6px;cursor:pointer;color:var(--text-3);display:flex;align-items:center}
-.btn-logout:hover{background:var(--danger-bg);border-color:var(--danger);color:var(--danger)}
-.btn-logout svg{width:16px;height:16px}
+.page-title{font-family:var(--font-display);font-size:20px;font-weight:700;color:var(--text);margin-bottom:16px;display:flex;align-items:center;gap:10px}
+.page-title svg{width:22px;height:22px;color:var(--primary)}
 
-/* 操作区 */
 .action-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.action-bar .status-label{font-size:13px;color:var(--text-3);display:flex;align-items:center;gap:6px}
 .action-bar .spacer{flex:1}
 
-/* 日期分组折叠 */
 .date-group{margin-bottom:10px}
 .date-group-head{cursor:pointer;display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--muted);border-radius:var(--r-sm);user-select:none;transition:background .15s}
 .date-group-head:hover{background:var(--muted-2)}
@@ -36,85 +24,109 @@
 .date-group-body.hidden{display:none}
 .table-scroll{max-height:340px;overflow-y:auto;border:1px solid var(--border-l);border-radius:0 0 var(--r-sm) var(--r-sm)}
 
-/* 日志 */
 .log-box{font-family:monospace;font-size:12px;line-height:1.8;max-height:260px;overflow-y:auto;background:var(--muted);border-radius:var(--r-sm);padding:12px;color:var(--text-2)}
 .section-desc{font-size:12px;color:var(--text-4);margin-top:2px}
 </style>
 </head>
 <body>
 
-<header class="mail-top">
-  <a class="back" href="/"><svg style="width:16px;height:16px"><use href="#i-chevron-right"/></svg> 文件合并</a>
-  <div class="title">处理结果</div>
-  <div style="flex:1"></div>
-  <div class="mail-user" id="userBox" style="display:none">
-    <div class="avatar" id="userAvatar"></div>
-    <div><div class="name" id="userName"></div><div class="role" id="userRole"></div></div>
-    <button class="btn-logout" onclick="doLogout()" title="退出登录"><svg><use href="#i-log-out"/></svg></button>
-  </div>
-</header>
-
-<div class="mail-wrap">
-
-  <div class="card card-pad" style="margin-bottom:20px">
-    <div class="action-bar">
-      <span class="status-label"><span class="badge badge-accent badge-hidden" id="mailStatusRunning">● 运行中</span><span class="badge badge-amber" id="mailStatusStopped">○ 已停止</span></span>
-      <div class="spacer"></div>
-      <button class="btn btn-ghost" style="padding:7px 16px;font-size:13px" onclick="startMail()">启动轮询</button>
-      <button class="btn btn-ghost" style="padding:7px 16px;font-size:13px" onclick="stopMail()">停止轮询</button>
-      <button class="btn btn-primary btn-lg" onclick="runMailOnce()"><svg style="width:16px;height:16px"><use href="#i-zap"/></svg> 立即执行</button>
-    </div>
-  </div>
-
-  <div class="card" style="margin-bottom:20px">
-    <div class="card-head">
-      <div class="ch-icon"><svg><use href="#i-download"/></svg></div>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="logo"><svg><use href="#i-database"/></svg></div>
       <div>
-        <div class="ch-title">处理结果</div>
-        <div class="section-desc">合并生成的 Excel，按日期分组</div>
+        <div class="name">数据合并平台</div>
+        <div class="sub">Excel Merger & Filter</div>
       </div>
-      <div class="ch-spacer"></div>
-      <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="loadMailResults()">刷新</button>
     </div>
-    <div class="card-pad" style="padding-top:14px">
-      <div id="mailResults"></div>
+    <nav class="sidebar-nav">
+      <div class="nav-section">
+        <div class="nav-section-title">功能</div>
+        <div class="nav-item" onclick="window.location.href='/'"><svg><use href="#i-upload"/></svg> 文件合并</div>
+        <div class="nav-item" onclick="window.location.href='/mail'"><svg><use href="#i-mail"/></svg> 邮件设置</div>
+        <div class="nav-item active" onclick="window.location.href='/mail/results'"><svg><use href="#i-download"/></svg> 处理结果</div>
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-box" id="userBox" style="display:none">
+        <div class="user-avatar" id="userAvatar"></div>
+        <div class="user-info">
+          <div class="user-name" id="userName">用户</div>
+          <div class="user-role" id="userRole">角色</div>
+        </div>
+        <button class="btn-logout" onclick="doLogout()" title="退出登录"><svg><use href="#i-log-out"/></svg></button>
+      </div>
+      <div class="status"><span class="dot"></span>服务运行中</div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="mail-wrap">
+      <div class="page-title"><svg><use href="#i-download"/></svg> 处理结果</div>
+
+      <div class="card card-pad" style="margin-bottom:20px">
+        <div class="action-bar">
+          <span class="badge badge-accent badge-hidden" id="mailStatusRunning">● 运行中</span>
+          <span class="badge badge-amber" id="mailStatusStopped">○ 已停止</span>
+          <div class="spacer"></div>
+          <button class="btn btn-ghost" style="padding:7px 16px;font-size:13px" onclick="startMail()">启动轮询</button>
+          <button class="btn btn-ghost" style="padding:7px 16px;font-size:13px" onclick="stopMail()">停止轮询</button>
+          <button class="btn btn-primary btn-lg" onclick="runMailOnce()"><svg style="width:16px;height:16px"><use href="#i-zap"/></svg> 立即执行</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-head">
+          <div class="ch-icon"><svg><use href="#i-download"/></svg></div>
+          <div>
+            <div class="ch-title">处理结果</div>
+            <div class="section-desc">合并生成的 Excel，按日期分组</div>
+          </div>
+          <div class="ch-spacer"></div>
+          <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="loadMailResults()">刷新</button>
+        </div>
+        <div class="card-pad" style="padding-top:14px">
+          <div id="mailResults"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-head">
+          <div class="ch-icon"><svg><use href="#i-mail"/></svg></div>
+          <div>
+            <div class="ch-title">捞取任务</div>
+            <div class="section-desc">每轮捞到的邮件及附件，按日期分组</div>
+          </div>
+          <div class="ch-spacer"></div>
+          <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="loadMailTasks()">刷新</button>
+        </div>
+        <div class="card-pad" style="padding-top:14px">
+          <div id="mailTasks"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head" style="cursor:pointer" onclick="toggleLog()">
+          <div class="ch-icon"><svg><use href="#i-refresh"/></svg></div>
+          <div>
+            <div class="ch-title">处理日志</div>
+            <div class="section-desc">最近轮询的详细记录（点击展开/收起）</div>
+          </div>
+          <div class="ch-spacer"></div>
+          <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="event.stopPropagation();loadMailLogs()">刷新</button>
+          <svg id="logChevron" style="width:16px;height:16px;color:var(--text-4);transition:transform .2s"><use href="#i-chevron-right"/></svg>
+        </div>
+        <div class="card-pad hidden" id="logBody" style="padding-top:14px">
+          <div class="log-box" id="mailLogs"></div>
+        </div>
+      </div>
     </div>
   </div>
-
-  <div class="card" style="margin-bottom:20px">
-    <div class="card-head">
-      <div class="ch-icon"><svg><use href="#i-mail"/></svg></div>
-      <div>
-        <div class="ch-title">捞取任务</div>
-        <div class="section-desc">每轮捞到的邮件及附件，按日期分组</div>
-      </div>
-      <div class="ch-spacer"></div>
-      <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="loadMailTasks()">刷新</button>
-    </div>
-    <div class="card-pad" style="padding-top:14px">
-      <div id="mailTasks"></div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-head" style="cursor:pointer" onclick="toggleLog()">
-      <div class="ch-icon"><svg><use href="#i-refresh"/></svg></div>
-      <div>
-        <div class="ch-title">处理日志</div>
-        <div class="section-desc">最近轮询的详细记录（点击展开/收起）</div>
-      </div>
-      <div class="ch-spacer"></div>
-      <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="event.stopPropagation();loadMailLogs()">刷新</button>
-      <svg id="logChevron" style="width:16px;height:16px;color:var(--text-4);transition:transform .2s"><use href="#i-chevron-right"/></svg>
-    </div>
-    <div class="card-pad hidden" id="logBody" style="padding-top:14px">
-      <div class="log-box" id="mailLogs"></div>
-    </div>
-  </div>
-
 </div>
 
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-database" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
   <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></symbol>
@@ -256,6 +268,10 @@ async function loadUserInfo(){
       document.getElementById('userRole').textContent=u.role==='admin'?'管理员':'普通用户';
       document.getElementById('userAvatar').textContent=(u.name||u.username||'?')[0].toUpperCase();
       document.getElementById('userBox').style.display='flex';
+      if(u.role!=='admin'){
+        const mailNav=document.querySelector('.nav-item[onclick="window.location.href=\'/mail\'"]');
+        if(mailNav)mailNav.style.display='none';
+      }
     }
   }catch(e){window.location.href='/login'}
 }
