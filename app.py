@@ -659,13 +659,21 @@ if __name__ == "__main__":
     import uvicorn
     port = 8000
     if getattr(sys, "frozen", False):
+        # 桌面窗口模式（PyInstaller 打包后双击运行）
         import threading
-        import webbrowser
+        import webview
 
-        def _open_browser():
-            import time
-            time.sleep(2)
-            webbrowser.open(f"http://127.0.0.1:{port}")
+        def _run_server():
+            uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
-        threading.Thread(target=_open_browser, daemon=True).start()
-    uvicorn.run(app, host="0.0.0.0", port=port)
+        threading.Thread(target=_run_server, daemon=True).start()
+        webview.create_window(
+            "Excel 合并平台",
+            f"http://127.0.0.1:{port}",
+            width=1280,
+            height=820,
+            min_size=(900, 600),
+        )
+        webview.start()
+    else:
+        uvicorn.run(app, host="0.0.0.0", port=port)
