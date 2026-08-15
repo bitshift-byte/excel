@@ -12,9 +12,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 复制项目代码
 COPY app.py ./
+COPY merger.py ./
+COPY mail_reader.py ./
 COPY templates/ ./templates/
 COPY china_regions.json ./
 COPY rules.json ./
+COPY mail_config.example.json ./
 
 # 创建上传和输出目录
 RUN mkdir -p uploads output
