@@ -43,10 +43,12 @@ def test_clean_output_files(tmp_path):
     for f in names:
         p = os.path.join(tmp_path, f)
         open(p, "w").close()
-    os.utime(os.path.join(tmp_path, "邮件合并_湖南_20260814_b.xlsx"), (100, 100))
+        os.utime(p, (100, 100))
+    # 让历史日期 b 比 a 新（b 应被保留）
+    os.utime(os.path.join(tmp_path, "邮件合并_湖南_20260814_b.xlsx"), (200, 200))
     clean_output_files(str(tmp_path))
     remain = sorted(os.listdir(tmp_path))
     assert f"邮件合并_湖南_{today}_a.xlsx" in remain  # 当天全留
     assert f"邮件合并_湖南_{today}_b.xlsx" in remain
-    assert "邮件合并_湖南_20260814_b.xlsx" in remain  # 历史留最后一个
+    assert "邮件合并_湖南_20260814_b.xlsx" in remain  # 历史留最后一个（最新）
     assert "邮件合并_湖南_20260814_a.xlsx" not in remain  # 历史旧的删除
