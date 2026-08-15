@@ -752,7 +752,10 @@ def merge_files(
             continue
         if not jh_val:
             continue
-        dedup_key = (jh_val, str(aligned_row.get("项目", "")).strip())
+        xm_val = str(aligned_row.get("项目", "")).strip()
+        if not xm_val:
+            continue
+        dedup_key = (jh_val, xm_val)
         if dedup_key in seen_keys:
             continue
         seen_keys.add(dedup_key)

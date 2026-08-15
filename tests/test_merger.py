@@ -39,3 +39,16 @@ def test_merge_files_end_to_end(tmp_path):
                          rule_id=None, output_dir=out_dir, output_prefix="测试")
     assert os.path.exists(result["output_path"])
     assert result["stats"]["filtered_rows"] == 1  # 只保留苏州
+
+
+def test_merge_files_filters_summary_rows_without_item(tmp_path):
+    f = os.path.join(tmp_path, "a.xlsx")
+    _make_xlsx(f, ["交货", "项目", "交货量", "送达方地点"],
+               [["1001", "10", 5, "苏州市"],
+                ["1001", None, 5, "苏州市"],   # 项目号为空 = 汇总行，应被过滤
+                ["1002", "20", 3, "杭州市"]])
+    out_dir = os.path.join(tmp_path, "out")
+    os.makedirs(out_dir, exist_ok=True)
+    result = merge_files([f], selected_sheets=None, provinces=[],
+                         rule_id=None, output_dir=out_dir, output_prefix="测试")
+    assert result["stats"]["filtered_rows"] == 2  # 汇总行被过滤，剩 2 行明细
