@@ -16,6 +16,8 @@ services:
       - ./rules.json:/app/rules.json
       # 邮件读取器配置持久化
       - ./mail_config.json:/app/mail_config.json
+      # 已处理邮件 UID 记录（去重）
+      - ./processed_uids.json:/app/processed_uids.json
     expose:
       - "8000"            # 仅对 nginx 可见，不对外暴露
 

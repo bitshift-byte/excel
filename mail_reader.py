@@ -9,6 +9,7 @@ import datetime
 import tempfile
 from email.header import decode_header
 from typing import List, Set
+from collections import deque
 
 from merger import merge_files
 
@@ -105,6 +106,19 @@ def download_excel_attachments(imap: imaplib.IMAP4_SSL, uid: bytes, dest_dir: st
 
 # ---------- 主流程 ----------
 
+_logs = deque(maxlen=200)  # 内存日志，最近 200 条
+
+
+def log(msg: str) -> None:
+    line = f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}"
+    _logs.append(line)
+    print(f"[mail_reader] {line}", flush=True)
+
+
+def get_logs() -> List[str]:
+    return list(_logs)
+
+
 def load_config(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -116,11 +130,13 @@ def process_once(cfg: dict) -> int:
     processed = load_processed_uids(uids_file)
     output_dir = cfg.get("output_dir", "output")
 
+    log(f"开始一轮：搜索 {since} 之后的邮件")
     imap = connect_imap(cfg["imap_host"], cfg["email"], cfg["auth_code"])
     try:
         uids = search_mails(imap, since)
         new_uids = filter_new_uids(uids, processed)
         keywords = cfg.get("subject_keywords", [])
+        log(f"共 {len(uids)} 封邮件，其中新邮件 {len(new_uids)} 封")
         handled = 0
         for uid in new_uids:
             try:
@@ -130,12 +146,14 @@ def process_once(cfg: dict) -> int:
                     m = email.message_from_bytes(data[0][1])
                     subject = decode_subject(m.get("Subject", ""))
                 if not matches_keywords(subject, keywords):
+                    log(f"跳过（主题不匹配）: {subject}")
                     continue
                 with tempfile.TemporaryDirectory() as tmp:
                     files = download_excel_attachments(imap, uid, tmp)
                     if not files:
+                        log(f"跳过（无 Excel 附件）: {subject}")
                         continue
-                    merge_files(
+                    result = merge_files(
                         file_paths=files,
                         selected_sheets=None,
                         provinces=cfg.get("provinces", []),
@@ -143,11 +161,13 @@ def process_once(cfg: dict) -> int:
                         output_dir=output_dir,
                         output_prefix=cfg.get("output_prefix", "邮件合并"),
                     )
+                    log(f"处理成功: {subject} → 全量 {result['stats']['total_merged_rows']} 行，筛选 {result['stats']['filtered_rows']} 行")
                 processed.add(uid)
                 handled += 1
             except Exception as e:
-                print(f"[mail_reader] 处理邮件 {uid.decode()} 失败: {e}")
+                log(f"处理失败: {uid.decode()} - {e}")
         save_processed_uids(uids_file, processed)
+        log(f"本轮完成，处理 {handled} 封邮件")
         return handled
     finally:
         imap.logout()
@@ -177,9 +197,9 @@ def _run_loop(cfg: dict):
     while not _stop_event.is_set():
         try:
             n = process_once(cfg)
-            print(f"[mail_reader] 本轮处理 {n} 封邮件: {datetime.datetime.now()}")
+            log(f"本轮处理 {n} 封邮件，等待 {interval}s 后进行下一轮")
         except Exception as e:
-            print(f"[mail_reader] 本轮异常: {e}")
+            log(f"本轮异常: {e}")
         _stop_event.wait(interval)
 
 

@@ -11,6 +11,7 @@ import json
 import uuid
 import datetime
 import secrets
+import asyncio
 from typing import List, Dict, Optional
 from contextlib import asynccontextmanager
 
@@ -472,6 +473,20 @@ async def stop_mail():
 @app.get("/api/mail/status")
 async def mail_status():
     return JSONResponse(content={"status": "success", "running": mail_reader.is_running()})
+
+
+@app.get("/api/mail/logs")
+async def mail_logs():
+    return JSONResponse(content={"status": "success", "logs": mail_reader.get_logs()})
+
+
+@app.post("/api/mail/run")
+async def run_mail_once():
+    if not os.path.exists(MAIL_CONFIG_FILE):
+        raise HTTPException(status_code=400, detail="请先保存邮件配置")
+    cfg = mail_reader.load_config(MAIL_CONFIG_FILE)
+    handled = await asyncio.to_thread(mail_reader.process_once, cfg)
+    return JSONResponse(content={"status": "success", "handled": handled, "logs": mail_reader.get_logs()})
 
 
 if __name__ == "__main__":

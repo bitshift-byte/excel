@@ -666,6 +666,7 @@ table.rtbl{border-collapse:collapse;width:100%;font-size:13px}
               <div style="flex:1"></div>
               <button class="btn btn-accent" style="padding:6px 16px;font-size:12px" onclick="startMail()">启动轮询</button>
               <button class="btn btn-ghost" style="padding:6px 16px;font-size:12px" onclick="stopMail()">停止轮询</button>
+              <button class="btn btn-primary" style="padding:6px 16px;font-size:12px" onclick="runMailOnce()">立即执行</button>
             </div>
           </div>
 
@@ -698,6 +699,19 @@ table.rtbl{border-collapse:collapse;width:100%;font-size:13px}
 
             <div style="display:flex;gap:10px;margin-top:20px">
               <button class="btn btn-primary" style="flex:1" onclick="saveMailConfig()">保存配置</button>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:16px">
+            <div class="card-head">
+              <div class="ch-icon"><svg><use href="#i-refresh"/></svg></div>
+              <span class="ch-title">处理日志</span>
+              <span class="ch-sub">最近轮询结果</span>
+              <div class="ch-spacer"></div>
+              <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="loadMailLogs()">刷新日志</button>
+            </div>
+            <div class="card-pad" style="padding-top:12px">
+              <div id="mailLogs" style="font-family:monospace;font-size:12px;line-height:1.8;max-height:300px;overflow-y:auto;background:var(--muted);border-radius:var(--r-sm);padding:12px;color:var(--text-2)"></div>
             </div>
           </div>
         </div>
@@ -1495,6 +1509,7 @@ function clearRuleMapping(){
 async function openMailSettings(){
   showStep('mail');
   await loadMailConfig();
+  loadMailLogs();
 }
 async function loadMailConfig(){
   try{
@@ -1559,6 +1574,30 @@ async function stopMail(){
     const data=await resp.json();
     updateMailStatus(data.running);
     toast('已停止轮询');
+  }catch(e){toast('请求出错: '+e.message,'error')}
+  finally{hideLoading()}
+}
+async function loadMailLogs(){
+  try{
+    const resp=await fetch('/api/mail/logs');
+    const data=await resp.json();
+    if(data.status==='success'){
+      const logs=data.logs||[];
+      const el=document.getElementById('mailLogs');
+      if(el)el.innerHTML=logs.length>0?logs.map(l=>'<div>'+esc(l)+'</div>').join(''):'<div style="color:var(--text-4)">暂无日志</div>';
+      if(el)el.scrollTop=el.scrollHeight;
+    }
+  }catch(e){}
+}
+async function runMailOnce(){
+  showLoading('正在立即执行，可能需要几十秒...');
+  try{
+    const resp=await fetch('/api/mail/run',{method:'POST'});
+    const data=await resp.json();
+    if(data.status==='success'){
+      toast('立即执行完成，处理 '+data.handled+' 封邮件');
+      loadMailLogs();
+    }else{toast('执行失败: '+(data.detail||'未知错误'),'error')}
   }catch(e){toast('请求出错: '+e.message,'error')}
   finally{hideLoading()}
 }
