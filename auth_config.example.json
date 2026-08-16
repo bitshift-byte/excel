@@ -1,7 +1,7 @@
 {
   "users": [
-    {"username": "admin", "password": "admin123", "name": "管理员", "role": "admin", "enabled": true},
-    {"username": "user1", "password": "user123", "name": "用户一", "role": "user", "enabled": true},
-    {"username": "user2", "password": "user123", "name": "用户二", "role": "user", "enabled": true}
+    {"username": "admin", "password": "admin123", "name": "管理员", "role": "admin", "enabled": true, "features": {"file_merge": true, "mail_reader": true, "rule_management": true}},
+    {"username": "user1", "password": "user123", "name": "用户一", "role": "user", "enabled": true, "features": {"file_merge": true, "mail_reader": true, "rule_management": true}},
+    {"username": "user2", "password": "user123", "name": "用户二", "role": "user", "enabled": true, "features": {"file_merge": true, "mail_reader": false, "rule_management": true}}
   ]
 }

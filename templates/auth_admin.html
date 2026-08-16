@@ -120,6 +120,9 @@ tbody tr:last-child td{border-bottom:none}
 .badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:2px 10px;border-radius:var(--r-pill);font-family:var(--font-display)}
 .badge-admin{background:var(--secondary-bg);color:var(--secondary-d)}
 .badge-user{background:var(--accent-bg);color:var(--accent-d)}
+.feat-badges{display:flex;gap:4px;flex-wrap:wrap}
+.feat-mini{font-size:10px;font-weight:700;padding:2px 7px;border-radius:var(--r-pill);background:rgba(0,0,0,.05);color:var(--text-4);font-family:var(--font-display)}
+.feat-mini.on{background:var(--primary-bg);color:var(--primary-d)}
 .cell-actions{display:flex;align-items:center;gap:6px}
 .empty-row{text-align:center;padding:40px;color:var(--text-4)}
 
@@ -341,12 +344,13 @@ tbody tr:last-child td{border-bottom:none}
             <th>用户名</th>
             <th>姓名</th>
             <th>角色</th>
+            <th>功能授权</th>
             <th>状态</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody id="userTableBody">
-          <tr><td colspan="6" class="empty-row">加载中...</td></tr>
+          <tr><td colspan="7" class="empty-row">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -458,6 +462,19 @@ tbody tr:last-child td{border-bottom:none}
         <input type="checkbox" id="modalEnabled" checked>
         <span class="slider"></span>
       </label>
+    </div>
+    <div class="modal-field-group-title" style="margin-top:8px;font-size:13px;font-weight:700;color:var(--text-2);font-family:var(--font-display)">功能授权</div>
+    <div class="modal-toggle-row">
+      <label>文件合并</label>
+      <label class="toggle"><input type="checkbox" id="modalFeatFileMerge" checked><span class="slider"></span></label>
+    </div>
+    <div class="modal-toggle-row">
+      <label>邮件读取</label>
+      <label class="toggle"><input type="checkbox" id="modalFeatMailReader" checked><span class="slider"></span></label>
+    </div>
+    <div class="modal-toggle-row">
+      <label>规则查看</label>
+      <label class="toggle"><input type="checkbox" id="modalFeatRuleMgmt" checked><span class="slider"></span></label>
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal('userModal')">取消</button>
@@ -623,7 +640,7 @@ async function loadUsers(){
 function renderTable(){
   var tbody=document.getElementById('userTableBody');
   if(!users.length){
-    tbody.innerHTML='<tr><td colspan="6" class="empty-row">暂无用户</td></tr>';
+    tbody.innerHTML='<tr><td colspan="7" class="empty-row">暂无用户</td></tr>';
     updateStats([]);
     return;
   }
@@ -634,6 +651,13 @@ function renderTable(){
     var toggleDisabled=isSelf?'disabled':'';
     var checked=u.enabled!==false?'checked':'';
     var toggleHtml='<label class="toggle'+(isSelf?' disabled':'')+'"><input type="checkbox" '+checked+' '+toggleDisabled+' onchange="toggleEnabled(\''+u.username+'\','+(u.enabled!==false)+')"><span class="slider"></span></label>';
+    // 功能权限 mini badges
+    var feats=u.features||{};
+    var featBadges='<div class="feat-badges">'
+      +'<span class="feat-mini'+(feats.file_merge?' on':'')+'" title="文件合并">合并</span>'
+      +'<span class="feat-mini'+(feats.mail_reader?' on':'')+'" title="邮件读取">邮件</span>'
+      +'<span class="feat-mini'+(feats.rule_management?' on':'')+'" title="规则查看">规则</span>'
+      +'</div>';
     var actions='<div class="cell-actions">'
       +'<button class="btn btn-sm" onclick="openEditModal(\''+u.username+'\')"><svg><use href="#i-edit"/></svg></button>'
       +'<button class="btn btn-sm" onclick="openPwModal(\''+u.username+'\')"><svg><use href="#i-key"/></svg></button>'
@@ -645,6 +669,7 @@ function renderTable(){
       +'<td><span class="cell-username">'+esc(u.username)+'</span></td>'
       +'<td>'+esc(u.name||u.username)+'</td>'
       +'<td>'+roleBadge+'</td>'
+      +'<td>'+featBadges+'</td>'
       +'<td>'+toggleHtml+'</td>'
       +'<td>'+actions+'</td>'
       +'</tr>';

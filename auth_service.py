@@ -64,6 +64,71 @@ AUTH_CONFIG_FILE = os.environ.get("AUTH_CONFIG_PATH", os.path.join(DATA_DIR, "au
 # 应用配置文件（邮件配置、功能开关、合并规则）
 APP_CONFIG_FILE = os.path.join(DATA_DIR, "app_config.json")
 
+
+# ===================== 内置默认规则 =====================
+# 联合利华标准34列 + 列名变体映射 + 值转换规则
+# 此规则是系统核心规则，不可删除、不可编辑，始终位于规则列表首位
+BUILTIN_RULE = {
+    "id": "_builtin_default",
+    "name": "联合利华标准34列（内置）",
+    "builtin": True,
+    "standard_headers": [
+        {"name": "交货", "source_columns": ["交货", "交货号"]},
+        {"name": "DlvTy", "source_columns": ["DlvTy", "交货类型"]},
+        {"name": "项目", "source_columns": ["项目", "    项目"]},
+        {"name": "物料", "source_columns": ["物料", "物料号"]},
+        {"name": "描述", "source_columns": ["描述", "物料描述"]},
+        {"name": "存储位置", "source_columns": ["存储位置", "位置"]},
+        {"name": "销售凭证", "source_columns": ["销售凭证", "销售订单"]},
+        {"name": "运达方", "source_columns": ["运达方", "送达方"]},
+        {"name": "运达方的名字", "source_columns": ["运达方的名字", "运达方名称"]},
+        {"name": "送达方地点", "source_columns": ["送达方地点", "城市"]},
+        {"name": "名称 3", "source_columns": ["名称 3", "名称3"]},
+        {
+            "name": "工厂",
+            "source_columns": ["工厂", "Plant"],
+            "value_mappings": [
+                {"source_file_contains": "分销-下单量", "source_value": "8136", "target_value": "701"},
+                {"source_file_contains": "分销-下单量", "source_value": "8137", "target_value": "701"},
+                {"source_file_contains": "分销报表", "source_value": "8136", "target_value": "901"},
+                {"source_file_contains": "分销报表", "source_value": "8137", "target_value": "901"},
+                {"source_file_contains": "分销报表", "source_value": "8205", "target_value": "901"},
+                {"source_file_contains": "跑单明细", "source_value": "8136", "target_value": "801"},
+                {"source_file_contains": "跑单明细", "source_value": "8137", "target_value": "801"},
+                {"source_file_contains": "跑单明细", "source_value": "8205", "target_value": "801"},
+            ],
+        },
+        {"name": "路线", "source_columns": ["路线", "Route"]},
+        {"name": "OPS", "source_columns": ["OPS", "全部拣配状态"]},
+        {"name": "WhN", "source_columns": ["WhN", "仓库号"]},
+        {"name": "批次", "source_columns": ["批次", "Batch"]},
+        {"name": "仓位", "source_columns": ["仓位"]},
+        {"name": "GM", "source_columns": ["GM", "GS", "货物移动状态"]},
+        {"name": "销售组织", "source_columns": ["销售组织", "SOrg.", "SOrg"]},
+        {"name": "售达方", "source_columns": ["售达方", "售达方代码"]},
+        {"name": "售达方的名字", "source_columns": ["售达方的名字", "售达方名称"]},
+        {
+            "name": "街道",
+            "source_columns": ["街道", "街道地址"],
+            "value_mappings": [
+                {"when_column": "工厂", "equals": "901", "use_column": "送达方地点"},
+            ],
+        },
+        {"name": "街道2", "source_columns": ["街道2", "街道 2"]},
+        {"name": "街道 3", "source_columns": ["街道 3", "街道3"]},
+        {"name": "交货量", "source_columns": ["交货量", "交货数量", "    交货量"]},
+        {"name": "SU", "source_columns": ["SU", "销售单位"]},
+        {"name": "数量(库存单位)", "source_columns": ["数量(库存单位)", "库存数量"]},
+        {"name": "计", "source_columns": ["计", "计数", "基本计量单位"]},
+        {"name": "总重量", "source_columns": ["总重量", "         总重量"]},
+        {"name": "WUn", "source_columns": ["WUn", "重量单位"]},
+        {"name": "业务量", "source_columns": ["业务量", "          业务量"]},
+        {"name": "VUn", "source_columns": ["VUn", "体积单位"]},
+        {"name": "交货日期", "source_columns": ["交货日期", "交货日期(从/到)"]},
+        {"name": "发货日期", "source_columns": ["发货日期", "实际发货日", "实际货物移动日期"]},
+    ],
+}
+
 # 默认应用配置
 DEFAULT_APP_CONFIG = {
     "mail_config": {
@@ -81,10 +146,17 @@ DEFAULT_APP_CONFIG = {
         "mail_reader": True,     # 邮件自动读取
         "rule_management": True, # 规则管理（桌面端是否可查看规则）
     },
-    "rules": [],
+    "rules": [],  # 内置规则在 load_app_config() 中自动注入，不写入默认配置
 }
 
 PASSWORD_SALT = os.environ.get("PASSWORD_SALT", "excel-merger-salt")
+
+# 用户默认功能权限（新用户创建时继承此配置）
+DEFAULT_USER_FEATURES = {
+    "file_merge": True,       # 文件合并功能
+    "mail_reader": True,      # 邮件自动读取
+    "rule_management": True,  # 规则查看
+}
 
 DEFAULT_USERS = [
     {"username": "admin", "password": "admin123", "name": "管理员", "role": "admin", "enabled": True},
@@ -120,10 +192,17 @@ def load_config(path: str = None) -> dict:
         if "users" not in cfg:
             cfg = {"users": [dict(u) for u in DEFAULT_USERS]}
             save_config(cfg, path)
-        # 自动补全 enabled 字段
+        # 自动补全 enabled 字段和 features 字段
         for u in cfg["users"]:
             if "enabled" not in u:
                 u["enabled"] = True
+            if "features" not in u:
+                u["features"] = json.loads(json.dumps(DEFAULT_USER_FEATURES))
+            else:
+                # 补全缺失的功能项
+                for fk, fv in DEFAULT_USER_FEATURES.items():
+                    if fk not in u["features"]:
+                        u["features"][fk] = fv
         return cfg
     except (json.JSONDecodeError, IOError):
         return {"users": [dict(u) for u in DEFAULT_USERS]}
@@ -138,11 +217,12 @@ def save_config(cfg: dict, path: str = None) -> None:
 # ===================== 应用配置 =====================
 
 def load_app_config() -> dict:
-    """加载应用配置（邮件、功能开关、规则），自动补全缺失字段"""
+    """加载应用配置（邮件、功能开关、规则），自动补全缺失字段。
+    内置规则（_builtin_default）始终注入到 rules 列表首位，不持久化到文件。"""
     if not os.path.exists(APP_CONFIG_FILE):
         cfg = json.loads(json.dumps(DEFAULT_APP_CONFIG))  # deep copy
         save_app_config(cfg)
-        return cfg
+        return _inject_builtin_rule(cfg)
     try:
         with open(APP_CONFIG_FILE, "r", encoding="utf-8") as f:
             cfg = json.load(f)
@@ -154,14 +234,27 @@ def load_app_config() -> dict:
                 for sub_key in DEFAULT_APP_CONFIG[key]:
                     if sub_key not in cfg[key]:
                         cfg[key][sub_key] = DEFAULT_APP_CONFIG[key][sub_key]
-        return cfg
+        return _inject_builtin_rule(cfg)
     except (json.JSONDecodeError, IOError):
-        return json.loads(json.dumps(DEFAULT_APP_CONFIG))
+        return _inject_builtin_rule(json.loads(json.dumps(DEFAULT_APP_CONFIG)))
+
+
+def _inject_builtin_rule(cfg: dict) -> dict:
+    """确保内置规则始终在 rules 列表首位（内存注入，不写入文件）"""
+    rules = cfg.get("rules", [])
+    # 过滤掉可能已存在的内置规则（防止重复）
+    rules = [r for r in rules if not r.get("builtin") and r.get("id") != "_builtin_default"]
+    cfg["rules"] = [json.loads(json.dumps(BUILTIN_RULE))] + rules
+    return cfg
 
 
 def save_app_config(cfg: dict) -> None:
+    """保存应用配置，自动过滤内置规则（不写入文件）"""
+    cfg_to_save = json.loads(json.dumps(cfg))
+    if "rules" in cfg_to_save:
+        cfg_to_save["rules"] = [r for r in cfg_to_save["rules"] if not r.get("builtin")]
     with open(APP_CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+        json.dump(cfg_to_save, f, ensure_ascii=False, indent=2)
 
 
 def public_mail_config(cfg: dict) -> dict:
@@ -205,6 +298,7 @@ def public_user(u: dict) -> dict:
         "name": u.get("name", u.get("username", "")),
         "role": u.get("role", "user"),
         "enabled": u.get("enabled", True),
+        "features": dict(u.get("features", DEFAULT_USER_FEATURES)),
     }
 
 
@@ -313,6 +407,7 @@ async def login(request: Request):
             "username": user["username"],
             "name": user.get("name", user["username"]),
             "role": user.get("role", "user"),
+            "features": dict(user.get("features", DEFAULT_USER_FEATURES)),
         },
     })
 
@@ -366,6 +461,7 @@ async def verify_user(request: Request):
             "name": user.get("name", user["username"]),
             "role": user.get("role", "user"),
             "enabled": user.get("enabled", True),
+            "features": dict(user.get("features", DEFAULT_USER_FEATURES)),
         }
     })
 
@@ -477,16 +573,24 @@ async def admin_add_user(request: Request, admin: dict = Depends(require_admin))
     if find_user(username, cfg):
         raise HTTPExceptionLite(409, "用户名已存在")
 
+    # 功能权限：从请求体获取，缺失的用默认值补全
+    features = body.get("features", {})
+    user_features = json.loads(json.dumps(DEFAULT_USER_FEATURES))
+    for fk in DEFAULT_USER_FEATURES:
+        if fk in features:
+            user_features[fk] = bool(features[fk])
+
     cfg["users"].append({
         "username": username,
         "password": password,
         "name": name,
         "role": role,
         "enabled": enabled,
+        "features": user_features,
     })
     save_config(cfg)
     return JSONResponse(
-        {"status": "success", "user": {"username": username, "name": name, "role": role, "enabled": enabled}},
+        {"status": "success", "user": {"username": username, "name": name, "role": role, "enabled": enabled, "features": user_features}},
         status_code=201,
     )
 
@@ -522,6 +626,14 @@ async def admin_edit_user(username: str, request: Request, admin: dict = Depends
         user["role"] = role
     if enabled is not None:
         user["enabled"] = enabled
+    # 更新功能权限
+    features = body.get("features")
+    if features is not None:
+        user_features = user.get("features", json.loads(json.dumps(DEFAULT_USER_FEATURES)))
+        for fk in DEFAULT_USER_FEATURES:
+            if fk in features:
+                user_features[fk] = bool(features[fk])
+        user["features"] = user_features
 
     save_config(cfg)
     return JSONResponse({"status": "success", "user": public_user(user)})
@@ -616,6 +728,36 @@ async def admin_update_features(request: Request, admin: dict = Depends(require_
     return JSONResponse({"status": "success", "features": features})
 
 
+# ===================== 管理后台 API — 用户功能权限 =====================
+
+@app.get("/admin/api/users/{username}/features")
+async def admin_get_user_features(username: str, admin: dict = Depends(require_admin)):
+    """获取指定用户的功能权限"""
+    cfg = load_config()
+    user = find_user(username, cfg)
+    if not user:
+        raise HTTPExceptionLite(404, "用户不存在")
+    return JSONResponse({"status": "success", "features": dict(user.get("features", DEFAULT_USER_FEATURES))})
+
+
+@app.put("/admin/api/users/{username}/features")
+async def admin_update_user_features(username: str, request: Request, admin: dict = Depends(require_admin)):
+    """更新指定用户的功能权限"""
+    body = await request.json()
+    cfg = load_config()
+    user = find_user(username, cfg)
+    if not user:
+        raise HTTPExceptionLite(404, "用户不存在")
+
+    user_features = user.get("features", json.loads(json.dumps(DEFAULT_USER_FEATURES)))
+    for fk in DEFAULT_USER_FEATURES:
+        if fk in body:
+            user_features[fk] = bool(body[fk])
+    user["features"] = user_features
+    save_config(cfg)
+    return JSONResponse({"status": "success", "features": user_features})
+
+
 # ===================== 管理后台 API — 规则管理 =====================
 
 @app.get("/admin/api/rules")
@@ -662,6 +804,9 @@ async def admin_create_rule(request: Request, admin: dict = Depends(require_admi
 @app.put("/admin/api/rules/{rule_id}")
 async def admin_update_rule(rule_id: str, request: Request, admin: dict = Depends(require_admin)):
     """编辑规则"""
+    # 内置规则不可编辑
+    if rule_id == "_builtin_default":
+        raise HTTPExceptionLite(400, "内置规则不可编辑")
     body = await request.json()
     name = body.get("name", "").strip()
     if not name:
@@ -676,6 +821,8 @@ async def admin_update_rule(rule_id: str, request: Request, admin: dict = Depend
             break
     if not found:
         raise HTTPExceptionLite(404, "规则不存在")
+    if found.get("builtin"):
+        raise HTTPExceptionLite(400, "内置规则不可编辑")
 
     standard_headers = body.get("standard_headers", [])
     found["name"] = name
@@ -696,8 +843,15 @@ async def admin_update_rule(rule_id: str, request: Request, admin: dict = Depend
 @app.delete("/admin/api/rules/{rule_id}")
 async def admin_delete_rule(rule_id: str, admin: dict = Depends(require_admin)):
     """删除规则"""
+    # 内置规则不可删除
+    if rule_id == "_builtin_default":
+        raise HTTPExceptionLite(400, "内置规则不可删除")
     cfg = load_app_config()
     rules = cfg.get("rules", [])
+    # 检查是否为内置规则
+    for r in rules:
+        if r["id"] == rule_id and r.get("builtin"):
+            raise HTTPExceptionLite(400, "内置规则不可删除")
     new_rules = [r for r in rules if r["id"] != rule_id]
     if len(new_rules) == len(rules):
         raise HTTPExceptionLite(404, "规则不存在")

@@ -17,8 +17,11 @@ services:
       - PASSWORD_SALT=excel-merger-salt
       # 服务间通信密钥（桌面应用必须配置相同的值）
       - SERVICE_TOKEN=lx-internal-service-token
+      - AUTH_HOST=0.0.0.0
+      - AUTH_PORT=8001
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 10s

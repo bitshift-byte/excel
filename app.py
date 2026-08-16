@@ -48,8 +48,13 @@ MAIL_CONFIG_FILE = os.path.join(DATA_DIR, "mail_config.json")  # 保留用于向
 
 
 def get_all_rules() -> list:
-    """获取所有规则：内置规则 + 远程规则"""
+    """获取所有规则：内置规则 + 远程规则。
+    如果远程规则中已包含内置规则（由认证服务注入），则不再重复添加。"""
     remote = get_remote_rules()
+    # 检查远程规则是否已包含内置规则
+    has_builtin = any(r.get("id") == "_builtin_default" or r.get("builtin") for r in remote)
+    if has_builtin:
+        return remote
     return [BUILTIN_RULE] + remote
 
 
@@ -204,7 +209,12 @@ def get_current_user(request: Request) -> Optional[dict]:
         username = SESSIONS[token]
         user_info = USERS.get(username)
         if user_info:
-            return {"username": username, "name": user_info.get("name", username), "role": user_info.get("role", "user")}
+            return {
+                "username": username,
+                "name": user_info.get("name", username),
+                "role": user_info.get("role", "user"),
+                "features": dict(user_info.get("features", {})),
+            }
     return None
 
 
@@ -323,10 +333,16 @@ async def login_api(request: Request):
     global USERS
     USERS = load_users_from_auth_service()
 
+    # 将用户信息（含功能权限）存入 session
     token = secrets.token_hex(16)
     SESSIONS[token] = user_info["username"]
 
-    resp = JSONResponse({"status": "success", "user": {"username": user_info["username"], "name": user_info["name"], "role": user_info["role"]}})
+    resp = JSONResponse({"status": "success", "user": {
+        "username": user_info["username"],
+        "name": user_info["name"],
+        "role": user_info["role"],
+        "features": user_info.get("features", {}),
+    }})
     resp.set_cookie(
         SESSION_COOKIE, token,
         max_age=SESSION_MAX_AGE,
@@ -352,7 +368,12 @@ async def get_me(request: Request):
     user = get_current_user(request)
     if not user:
         return JSONResponse({"status": "error", "detail": "未登录"}, status_code=401)
-    return JSONResponse({"status": "success", "user": user})
+    return JSONResponse({"status": "success", "user": {
+        "username": user["username"],
+        "name": user["name"],
+        "role": user["role"],
+        "features": user.get("features", {}),
+    }})
 
 
 @app.get("/api/users")
@@ -386,10 +407,11 @@ async def index(request: Request):
 @app.get("/mail", response_class=HTMLResponse)
 async def mail_page(request: Request):
     user = get_current_user(request)
-    if not user or user["role"] != "admin":
-        return RedirectResponse("/mail/results", status_code=302)
-    features = get_features()
-    if not features.get("mail_reader", True):
+    if not user:
+        return RedirectResponse("/login", status_code=302)
+    # 检查用户是否有邮件功能权限
+    user_features = user.get("features", {})
+    if not user_features.get("mail_reader", True):
         return RedirectResponse("/", status_code=302)
     with open(_resource_path("templates/mail.html"), "r", encoding="utf-8") as f:
         return f.read()
@@ -402,9 +424,12 @@ async def mail_results_page(request: Request):
 
 
 @app.get("/api/features")
-async def get_features_api():
-    """获取功能开关（供前端控制 UI 显示）"""
-    return JSONResponse(content={"status": "success", "features": get_features()})
+async def get_features_api(request: Request):
+    """获取当前用户的功能权限（供前端控制 UI 显示）"""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse(content={"status": "error", "detail": "未登录"}, status_code=401)
+    return JSONResponse(content={"status": "success", "features": user.get("features", {})})
 
 
 @app.get("/api/regions")
@@ -560,7 +585,10 @@ async def get_mail_config():
 
 @app.post("/api/mail/start")
 async def start_mail(request: Request):
-    require_admin_user(request)
+    user = require_admin_user(request)
+    # 检查用户是否有邮件功能权限
+    if not user.get("features", {}).get("mail_reader", True):
+        raise HTTPException(status_code=403, detail="您没有邮件读取功能的权限")
     cfg = get_mail_config()
     if not cfg or not cfg.get("email"):
         raise HTTPException(status_code=400, detail="邮件配置未设置，请在管理后台配置")

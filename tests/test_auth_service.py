@@ -587,3 +587,124 @@ def test_app_config_unauthenticated_admin_api(client):
     assert client.put("/admin/api/features", json={}).status_code == 401
     assert client.get("/admin/api/rules").status_code == 401
     assert client.post("/admin/api/rules", json={}).status_code == 401
+
+
+# ===================== 用户功能权限测试 =====================
+
+def test_login_returns_features(client):
+    """登录响应包含 features 字段"""
+    resp = client.post("/login", json={"username": "admin", "password": "admin123"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "features" in data["user"]
+    assert "file_merge" in data["user"]["features"]
+    assert "mail_reader" in data["user"]["features"]
+    assert "rule_management" in data["user"]["features"]
+
+
+def test_verify_user_returns_features(client):
+    """verify-user 响应包含 features"""
+    resp = client.post("/verify-user", json={"username": "admin"}, headers={"X-Service-Token": "lx-internal-service-token"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "features" in data["user"]
+    assert data["user"]["features"]["file_merge"] is True
+
+
+def test_load_config_auto_fills_features(tmp_path, monkeypatch):
+    """旧配置无 features 字段时自动补全默认值"""
+    cfg_file = tmp_path / "auth_config.json"
+    old_cfg = {"users": [{"username": "test", "password": "x", "name": "T", "role": "user", "enabled": True}]}
+    cfg_file.write_text(json.dumps(old_cfg), encoding="utf-8")
+    monkeypatch.setattr(auth_service, "AUTH_CONFIG_FILE", str(cfg_file))
+    cfg = load_config()
+    assert "features" in cfg["users"][0]
+    assert cfg["users"][0]["features"]["file_merge"] is True
+    assert cfg["users"][0]["features"]["mail_reader"] is True
+    assert cfg["users"][0]["features"]["rule_management"] is True
+
+
+def test_admin_create_user_with_features(admin_client):
+    """创建用户时指定功能权限"""
+    resp = admin_client.post("/admin/api/users", json={
+        "username": "limited", "password": "pw", "name": "受限用户",
+        "role": "user", "enabled": True,
+        "features": {"file_merge": True, "mail_reader": False, "rule_management": False}
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["user"]["features"]["file_merge"] is True
+    assert data["user"]["features"]["mail_reader"] is False
+    assert data["user"]["features"]["rule_management"] is False
+
+
+def test_admin_create_user_default_features(admin_client):
+    """创建用户时不指定 features，默认全部开启"""
+    resp = admin_client.post("/admin/api/users", json={
+        "username": "default_feat", "password": "pw", "name": "默认权限",
+        "role": "user", "enabled": True
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["user"]["features"]["file_merge"] is True
+    assert data["user"]["features"]["mail_reader"] is True
+
+
+def test_admin_update_user_features(admin_client):
+    """编辑用户功能权限"""
+    resp = admin_client.put("/admin/api/users/user1", json={
+        "features": {"file_merge": False, "mail_reader": False, "rule_management": True}
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["user"]["features"]["file_merge"] is False
+    assert data["user"]["features"]["mail_reader"] is False
+    assert data["user"]["features"]["rule_management"] is True
+
+
+def test_admin_get_user_features(admin_client):
+    """获取指定用户的功能权限"""
+    resp = admin_client.get("/admin/api/users/user1/features")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "features" in data
+    assert "file_merge" in data["features"]
+
+
+def test_admin_update_features_standalone(admin_client):
+    """通过独立接口更新用户功能权限"""
+    resp = admin_client.put("/admin/api/users/user1/features", json={
+        "file_merge": False, "mail_reader": True
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["features"]["file_merge"] is False
+    assert data["features"]["mail_reader"] is True
+    assert data["features"]["rule_management"] is True  # 未传的保持默认
+
+
+def test_admin_get_features_nonexistent_user(admin_client):
+    """获取不存在用户的功能权限返回 404"""
+    resp = admin_client.get("/admin/api/users/nobody/features")
+    assert resp.status_code == 404
+
+
+def test_admin_update_features_nonexistent_user(admin_client):
+    """更新不存在用户的功能权限返回 404"""
+    resp = admin_client.put("/admin/api/users/nobody/features", json={"file_merge": False})
+    assert resp.status_code == 404
+
+
+def test_features_unauthenticated_admin_api(client):
+    """未登录访问用户功能权限 API 返回 401"""
+    assert client.get("/admin/api/users/user1/features").status_code == 401
+    assert client.put("/admin/api/users/user1/features", json={"file_merge": False}).status_code == 401
+
+
+def test_public_user_includes_features(client):
+    """用户列表包含 features 字段"""
+    resp = client.get("/users", headers={"X-Service-Token": "lx-internal-service-token"})
+    assert resp.status_code == 200
+    for u in resp.json()["users"]:
+        assert "features" in u
+        assert "file_merge" in u["features"]
