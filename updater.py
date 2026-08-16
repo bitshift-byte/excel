@@ -17,7 +17,7 @@ import urllib.request
 import urllib.error
 
 # 当前版本（CI 打包时通过正则自动替换）
-APP_VERSION = "v1.0.0"
+APP_VERSION = "v1.2.0"
 
 # 待更新标记文件路径（与 exe/app 同目录）
 PENDING_UPDATE_FILE = "pending_update.json"
