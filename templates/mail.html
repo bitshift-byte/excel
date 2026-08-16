@@ -166,7 +166,18 @@ async function loadMailConfig(){
         badge.style.background='var(--muted)';badge.style.color='var(--text-4)';
       }
     }
-  }catch(e){toast('加载邮件配置失败','error')}
+  }catch(e){
+    console.error('mail config error:',e);
+    // 不弹错误提示，静默显示"未配置"状态
+    document.getElementById('cfgEmail').textContent='未配置';
+    document.getElementById('cfgImap').textContent='-';
+    document.getElementById('cfgKeywords').textContent='-';
+    document.getElementById('cfgProvinces').textContent='-';
+    document.getElementById('cfgInterval').textContent='-';
+    const badge=document.getElementById('mailStatusBadge');
+    badge.textContent='未配置';
+    badge.style.background='var(--muted)';badge.style.color='var(--text-4)';
+  }
 }
 async function runMailOnce(){
   const date=document.getElementById('mailDate').value;

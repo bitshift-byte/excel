@@ -126,6 +126,11 @@ tbody tr:last-child td{border-bottom:none}
 .dev-bound{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:var(--r-pill);background:var(--amber-bg);color:var(--amber-d);font-family:var(--font-display)}
 .dev-free{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:var(--r-pill);background:rgba(0,0,0,.05);color:var(--text-4);font-family:var(--font-display)}
 .dev-loading{font-size:11px;color:var(--text-4)}
+.upload-dropzone{border:2px dashed var(--border);border-radius:var(--r-md);padding:24px;text-align:center;cursor:pointer;transition:all .2s;display:flex;flex-direction:column;align-items:center;gap:6px}
+.upload-dropzone:hover{border-color:var(--primary);background:var(--primary-bg)}
+.upload-dropzone.dragover{border-color:var(--primary);background:var(--primary-bg)}
+.dz-text{font-size:13px;font-weight:600;color:var(--text-2)}
+.dz-hint{font-size:11px;color:var(--text-4)}
 .cell-actions{display:flex;align-items:center;gap:6px}
 .empty-row{text-align:center;padding:40px;color:var(--text-4)}
 
@@ -468,7 +473,12 @@ tbody tr:last-child td{border-bottom:none}
         </div>
         <div class="modal-field">
           <label>选择 exe 文件</label>
-          <input type="file" id="updInputFile" accept=".exe" style="font-size:13px">
+          <div class="upload-dropzone" id="uploadDropzone" onclick="document.getElementById('updInputFile').click()">
+            <svg style="width:24px;height:24px;color:var(--text-4)"><use href="#i-upload"/></svg>
+            <div class="dz-text" id="dzText">点击选择 .exe 文件</div>
+            <div class="dz-hint">最大 200MB</div>
+          </div>
+          <input type="file" id="updInputFile" accept=".exe" style="display:none" onchange="onFileSelected(this)">
         </div>
         <button class="btn btn-primary" onclick="uploadExe()" id="uploadBtn" style="margin-top:8px">
           <svg><use href="#i-upload"/></svg> 上传
@@ -1259,6 +1269,31 @@ async function loadUpdateInfo(){
       +'</tbody></table>';
   }catch(e){document.getElementById('updVersion').textContent='加载失败'}
 }
+
+function onFileSelected(input){
+  var file=input.files[0];
+  if(file){
+    var sz=(file.size/1024/1024).toFixed(1);
+    document.getElementById('dzText').textContent=file.name+' ('+sz+' MB)';
+  }
+}
+
+// Drag and drop support
+document.addEventListener('DOMContentLoaded',function(){
+  var dz=document.getElementById('uploadDropzone');
+  if(!dz)return;
+  dz.addEventListener('dragover',function(e){e.preventDefault();dz.classList.add('dragover')});
+  dz.addEventListener('dragleave',function(e){e.preventDefault();dz.classList.remove('dragover')});
+  dz.addEventListener('drop',function(e){
+    e.preventDefault();dz.classList.remove('dragover');
+    var files=e.dataTransfer.files;
+    if(files.length){
+      var input=document.getElementById('updInputFile');
+      input.files=files;
+      onFileSelected(input);
+    }
+  });
+});
 
 async function uploadExe(){
   var version=document.getElementById('updInputVersion').value.trim();
