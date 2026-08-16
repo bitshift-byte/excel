@@ -4,7 +4,9 @@
 - 下次启动时检测到标记 → 执行替换 → 启动新版本 → 清理标记
 - 用户全程无感知
 
-Windows 专用：替换脚本使用 .bat（tasklist + copy + start）
+跨平台支持：
+- Windows: 替换脚本使用 .bat（tasklist + copy + start）
+- macOS: 替换脚本使用 .sh（sleep + cp + open）
 """
 import os
 import sys
@@ -17,7 +19,7 @@ import urllib.error
 # 当前版本（CI 打包时通过正则自动替换）
 APP_VERSION = "v1.0.0"
 
-# 待更新标记文件路径（与 exe 同目录）
+# 待更新标记文件路径（与 exe/app 同目录）
 PENDING_UPDATE_FILE = "pending_update.json"
 
 # 下载配置
@@ -26,15 +28,28 @@ DOWNLOAD_RETRY = 3             # 下载失败重试次数
 DOWNLOAD_CHUNK = 65536         # 下载缓冲块大小
 API_TIMEOUT = 15               # API 超时
 
+IS_WINDOWS = sys.platform == "win32"
+IS_MACOS = sys.platform == "darwin"
+
 
 def get_current_version() -> str:
     return APP_VERSION
 
 
 def _data_dir() -> str:
-    """可写目录：打包后为 exe 所在目录，开发时为脚本所在目录"""
+    """可写目录：打包后为 exe/app 所在目录，开发时为脚本所在目录"""
     if getattr(sys, "frozen", False):
-        return os.path.dirname(sys.executable)
+        if IS_WINDOWS:
+            return os.path.dirname(sys.executable)
+        elif IS_MACOS:
+            # PyInstaller --windowed on macOS creates .app bundle
+            # sys.executable = .../LX.app/Contents/MacOS/LX
+            # data dir = .../LX.app/Contents/  (writable, inside bundle)
+            exe_dir = os.path.dirname(sys.executable)  # .../Contents/MacOS
+            contents_dir = os.path.dirname(exe_dir)      # .../Contents
+            return contents_dir
+        else:
+            return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
 
@@ -51,9 +66,11 @@ def _get_auth_service_url() -> str:
     # 2. 配置文件
     url_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "auth_service_url.txt")
     if getattr(sys, "frozen", False):
-        if os.name == "nt":
+        if IS_WINDOWS:
             appdata = os.environ.get("APPDATA")
             base = os.path.join(appdata, "ExcelMerger") if appdata else os.path.dirname(sys.executable)
+        elif IS_MACOS:
+            base = _data_dir()
         else:
             base = os.path.dirname(sys.executable)
         url_file = os.path.join(base, "data", "auth_service_url.txt")
@@ -143,26 +160,20 @@ def _download_file(url: str, dest_path: str) -> bool:
                 "X-Service-Token": token,
             })
             with urllib.request.urlopen(req, timeout=DOWNLOAD_TIMEOUT) as resp:
-                # 获取文件总大小（用于将来扩展进度条）
-                total = resp.getheader("Content-Length")
-                total = int(total) if total else None
                 with open(tmp_path, "wb") as f:
-                    downloaded = 0
                     while True:
-                        data = resp.read(DOWNLOAD_CHUNK)
-                        if not data:
+                        chunk = resp.read(DOWNLOAD_CHUNK)
+                        if not chunk:
                             break
-                        f.write(data)
-                        downloaded += len(data)
-            # 下载完成，原子重命名
+                        f.write(chunk)
+            # 原子重命名
             if os.path.exists(dest_path):
                 os.remove(dest_path)
             os.rename(tmp_path, dest_path)
-            print(f"[updater] 下载成功 ({attempt}/{DOWNLOAD_RETRY} 次): {dest_path}")
+            print(f"[updater] 下载成功: {dest_path} (第 {attempt} 次)")
             return True
         except Exception as e:
             print(f"[updater] 下载失败 (第 {attempt}/{DOWNLOAD_RETRY} 次): {e}")
-            # 清理临时文件
             try:
                 if os.path.exists(tmp_path):
                     os.remove(tmp_path)
@@ -170,15 +181,27 @@ def _download_file(url: str, dest_path: str) -> bool:
                 pass
             if attempt < DOWNLOAD_RETRY:
                 import time
-                time.sleep(2 * attempt)  # 指数退避
+                time.sleep(2)
     return False
+
+
+def _get_download_filename() -> str:
+    """根据平台返回下载文件名"""
+    if IS_MACOS:
+        return "LX_new.app.zip"
+    return "LX_new.exe"
+
+
+def _get_download_ext() -> str:
+    """根据平台返回下载文件扩展名"""
+    if IS_MACOS:
+        return ".zip"
+    return ".exe"
 
 
 def check_and_download_update() -> dict:
     """
-    静默检查并下载新版本（不执行替换）。
-    有新版本 → 下载到临时目录 → 写入 pending_update.json 标记 → 返回结果。
-    下次启动时由 apply_pending_update() 执行替换。
+    检查并下载更新（不立即替换，下次启动时替换）。
     """
     current = get_current_version()
     result = check_latest_version()
@@ -193,28 +216,33 @@ def check_and_download_update() -> dict:
             "has_update": False,
             "current": current,
             "latest": latest,
+            "body": result.get("body", ""),
             "error": None,
         }
 
-    if not result.get("has_file"):
+    if not result.get("has_file", False):
         return {
             "has_update": True,
             "current": current,
             "latest": latest,
             "body": result.get("body", ""),
-            "error": "新版本已发布但服务器上暂无安装包",
+            "error": "服务器已发布新版本但尚未上传安装包",
         }
 
-    # 下载新 exe 到临时目录
+    # 下载新版本
     temp_dir = tempfile.gettempdir()
-    new_exe_path = os.path.join(temp_dir, "LX_new.exe")
-    if _download_file(result["url"], new_exe_path):
+    if IS_MACOS:
+        new_file_path = os.path.join(temp_dir, "LX_new.zip")
+    else:
+        new_file_path = os.path.join(temp_dir, "LX_new.exe")
+
+    if _download_file(result["url"], new_file_path):
         # 校验下载文件大小（至少 1MB，防止下到错误页面）
-        file_size = os.path.getsize(new_exe_path)
+        file_size = os.path.getsize(new_file_path)
         if file_size < 1_000_000:
-            print(f"[updater] 下载文件过小 ({file_size} bytes)，可能不是有效 exe，跳过")
+            print(f"[updater] 下载文件过小 ({file_size} bytes)，可能不是有效文件，跳过")
             try:
-                os.remove(new_exe_path)
+                os.remove(new_file_path)
             except Exception:
                 pass
             return {
@@ -226,9 +254,10 @@ def check_and_download_update() -> dict:
             }
         # 写入待更新标记
         pending = {
-            "new_exe_path": new_exe_path,
+            "new_file_path": new_file_path,
             "from_version": current,
             "to_version": latest,
+            "platform": "macos" if IS_MACOS else "windows",
         }
         with open(_pending_path(), "w", encoding="utf-8") as f:
             json.dump(pending, f)
@@ -250,37 +279,23 @@ def has_pending_update() -> bool:
     return os.path.exists(_pending_path())
 
 
-def apply_pending_update() -> bool:
-    """
-    启动时调用：如果存在待更新标记，执行替换并重启。
-    1. 读取 pending_update.json
-    2. 校验新 exe 文件是否存在且有效
-    3. 生成 .bat 替换脚本：等待旧进程退出 → 备份 → 替换 → 启动 → 清理
-    4. 启动脚本并退出当前进程
-
-    仅 Windows + PyInstaller 打包后生效。
-    """
-    if not getattr(sys, "frozen", False):
-        return False
-
-    if not has_pending_update():
-        return False
-
+def _clear_pending():
+    """删除待更新标记文件"""
     try:
-        with open(_pending_path(), "r", encoding="utf-8") as f:
-            pending = json.load(f)
-    except Exception as e:
-        print(f"[updater] 读取更新标记失败: {e}")
-        _clear_pending()
-        return False
+        if os.path.exists(_pending_path()):
+            os.remove(_pending_path())
+    except Exception:
+        pass
 
-    new_exe = pending.get("new_exe_path", "")
+
+def _apply_windows_update(pending: dict) -> bool:
+    """Windows 平台应用更新"""
+    new_exe = pending.get("new_file_path", pending.get("new_exe_path", ""))
     if not os.path.isfile(new_exe):
         print(f"[updater] 新版本文件不存在: {new_exe}")
         _clear_pending()
         return False
 
-    # 校验文件大小（至少 1MB）
     if os.path.getsize(new_exe) < 1_000_000:
         print(f"[updater] 新版本文件异常（过小），跳过更新")
         try:
@@ -293,7 +308,6 @@ def apply_pending_update() -> bool:
     current_exe = sys.executable
     backup_exe = current_exe + ".bak"
 
-    # 生成替换脚本：等待旧进程退出 → 备份 → 替换 → 启动 → 清理
     temp_dir = tempfile.gettempdir()
     bat_path = os.path.join(temp_dir, "LX_apply_update.bat")
     pid = os.getpid()
@@ -328,23 +342,123 @@ del /f /q "%~f0" >nul 2>&1
     with open(bat_path, "w", encoding="ascii") as f:
         f.write(bat_content)
 
-    # 清除标记（避免循环）
     _clear_pending()
-
-    # 启动替换脚本并退出
     subprocess.Popen(["cmd", "/c", bat_path], creationflags=subprocess.CREATE_NO_WINDOW)
     print("[updater] 正在应用更新，即将重启...")
     os._exit(0)
     return True
 
 
-def _clear_pending():
-    """删除待更新标记文件"""
+def _apply_macos_update(pending: dict) -> bool:
+    """macOS 平台应用更新"""
+    new_zip = pending.get("new_file_path", pending.get("new_exe_path", ""))
+    if not os.path.isfile(new_zip):
+        print(f"[updater] 新版本文件不存在: {new_zip}")
+        _clear_pending()
+        return False
+
+    if os.path.getsize(new_zip) < 1_000_000:
+        print(f"[updater] 新版本文件异常（过小），跳过更新")
+        try:
+            os.remove(new_zip)
+        except Exception:
+            pass
+        _clear_pending()
+        return False
+
+    # macOS: sys.executable = .../LX.app/Contents/MacOS/LX
+    # app_bundle = .../LX.app
+    current_exe = sys.executable
+    contents_dir = os.path.dirname(os.path.dirname(current_exe))  # .../Contents
+    app_bundle = os.path.dirname(contents_dir)                      # .../LX.app
+    app_dir = os.path.dirname(app_bundle)                           # parent dir
+    backup_bundle = app_bundle + ".bak"
+
+    pid = os.getpid()
+    temp_dir = tempfile.gettempdir()
+    sh_path = os.path.join(temp_dir, "LX_apply_update.sh")
+
+    sh_content = f"""#!/bin/bash
+# LX macOS 自动更新脚本
+echo "[LX更新] 正在等待应用退出..."
+while kill -0 {pid} 2>/dev/null; do
+    sleep 1
+done
+echo "[LX更新] 正在备份旧版本..."
+rm -rf "{backup_bundle}"
+cp -R "{app_bundle}" "{backup_bundle}"
+echo "[LX更新] 正在解压新版本..."
+# 解压 zip 到临时目录
+UNZIP_DIR="{temp_dir}/LX_update_extract"
+rm -rf "$UNZIP_DIR"
+mkdir -p "$UNZIP_DIR"
+cd "$UNZIP_DIR"
+unzip -o "{new_zip}" -d "$UNZIP_DIR" 2>/dev/null
+# 查找解压出来的 .app
+NEW_APP=$(find "$UNZIP_DIR" -maxdepth 2 -name "*.app" -type d | head -1)
+if [ -z "$NEW_APP" ]; then
+    echo "[LX更新] 未找到 .app，恢复旧版本"
+    rm -rf "$UNZIP_DIR"
+    open "{app_bundle}"
+    exit 1
+fi
+echo "[LX更新] 正在安装新版本..."
+rm -rf "{app_bundle}"
+cp -R "$NEW_APP" "{app_bundle}"
+# 清理
+rm -rf "$UNZIP_DIR"
+rm -f "{new_zip}"
+rm -f "{_pending_path()}"
+echo "[LX更新] 启动新版本..."
+open "{app_bundle}"
+# 清理备份和脚本
+sleep 3
+rm -rf "{backup_bundle}"
+rm -f "$0"
+"""
+    with open(sh_path, "w", encoding="utf-8") as f:
+        f.write(sh_content)
+    os.chmod(sh_path, 0o755)
+
+    _clear_pending()
+    subprocess.Popen(["/bin/bash", sh_path])
+    print("[updater] 正在应用更新，即将重启...")
+    os._exit(0)
+    return True
+
+
+def apply_pending_update() -> bool:
+    """
+    启动时调用：如果存在待更新标记，执行替换并重启。
+    1. 读取 pending_update.json
+    2. 校验新文件是否存在且有效
+    3. 生成平台对应的替换脚本
+    4. 启动脚本并退出当前进程
+
+    仅 PyInstaller 打包后生效。
+    """
+    if not getattr(sys, "frozen", False):
+        return False
+
+    if not has_pending_update():
+        return False
+
     try:
-        if os.path.exists(_pending_path()):
-            os.remove(_pending_path())
-    except Exception:
-        pass
+        with open(_pending_path(), "r", encoding="utf-8") as f:
+            pending = json.load(f)
+    except Exception as e:
+        print(f"[updater] 读取更新标记失败: {e}")
+        _clear_pending()
+        return False
+
+    if IS_WINDOWS:
+        return _apply_windows_update(pending)
+    elif IS_MACOS:
+        return _apply_macos_update(pending)
+    else:
+        print(f"[updater] 不支持的平台: {sys.platform}")
+        _clear_pending()
+        return False
 
 
 def check_and_update(auto: bool = False) -> dict:

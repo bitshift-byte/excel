@@ -1,0 +1,97 @@
+name: Build & Release macOS App
+
+on:
+  push:
+    tags:
+      - "mac-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（如 v1.0.1）"
+        required: true
+        default: "v1.0.1"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 确定版本号
+        id: ver
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            # 去掉 mac- 前缀
+            TAG="${GITHUB_REF#refs/tags/}"
+            TAG="${TAG#mac-}"
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 安装 Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: 更新版本号
+        shell: python
+        run: |
+          import re
+          tag = "${{ steps.ver.outputs.tag }}"
+          with open("updater.py", "r", encoding="utf-8") as f:
+              t = f.read()
+          t = re.sub(r'APP_VERSION = "v[^"]*"', f'APP_VERSION = "{tag}"', t)
+          with open("updater.py", "w", encoding="utf-8") as f:
+              f.write(t)
+          print(f"Version set to: {tag}")
+
+      - name: PyInstaller 打包 macOS .app
+        run: |
+          pyinstaller --noconfirm --clean --windowed --name LX --icon icon.icns --collect-all webview --hidden-import updater --add-data "china_regions.json:." --add-data "templates:templates" --add-data "auth_config.example.json:." app.py
+
+      - name: 打包为 zip
+        run: |
+          cd dist
+          zip -r "LX捞数据-macOS.zip" "LX.app"
+
+      - name: 上传 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LX捞数据-macOS
+          path: dist/LX捞数据-macOS.zip
+          retention-days: 30
+
+      - name: 发布到 GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/LX捞数据-macOS.zip
+          tag_name: mac-${{ steps.ver.outputs.tag }}
+          name: LX捞数据 macOS ${{ steps.ver.outputs.tag }}
+          body: |
+            ## LX捞数据 macOS ${{ steps.ver.outputs.tag }}
+
+            ### 下载使用
+            1. 下载 `LX捞数据-macOS.zip`
+            2. 解压后得到 `LX.app`
+            3. 双击运行（首次运行可能需要在系统设置→隐私与安全性中允许运行）
+            4. 默认账号：admin / admin123
+
+            ### 注意事项
+            - 此版本为 macOS (Apple Silicon) 版本
+            - 自动升级功能支持 macOS
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
