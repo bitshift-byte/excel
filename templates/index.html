@@ -1533,10 +1533,42 @@ function handleHashRoute(){
   else if(hash==='rules'){openRuleManager();}
 }
 
+// ==================== Status Sync (5秒轮询) ====================
+var _lastSyncState={};
+async function syncStatus(){
+  try{
+    const d=await apiFetch('/api/sync');
+    if(d.status!=='success'){
+      // 401 = 被踢下线或禁用
+      if(!window._syncRedirecting){window._syncRedirecting=true;toast('账号状态已变更，正在退出...','error');setTimeout(function(){window.location.href='/login'},1500)}
+      return;
+    }
+    var u=d.user||{};
+    var feats=u.features||{};
+    // 检测用户信息变化
+    var changed=false;
+    if(_lastSyncState.role!==u.role){changed=true}
+    if(JSON.stringify(_lastSyncState.features||{})!==JSON.stringify(feats)){changed=true}
+    if(_lastSyncState.name!==u.name){changed=true}
+    _lastSyncState={name:u.name,role:u.role,features:feats};
+    if(changed){
+      // 用户信息或权限有变化，重新加载用户信息
+      loadUserInfo();
+      // 如果在邮件页，重新加载配置
+      var activePanel=document.querySelector('.step-panel.active')||document.querySelector('.step-panel[style*="block"]');
+      if(activePanel&&activePanel.id==='stepMail'){loadMailConfig()}
+    }
+    // 同步邮件运行状态
+    if(typeof d.mail_running!=='undefined'){updateMailStatus(d.mail_running)}
+  }catch(e){}
+}
+
 // Load user info on page load
 loadUserInfo();
 loadVersion();
 handleHashRoute();
+// 5秒轮询同步状态
+setInterval(syncStatus,5000);
 
 </script>
 </body>

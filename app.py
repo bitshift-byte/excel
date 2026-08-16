@@ -180,7 +180,7 @@ SESSION_COOKIE = "nebula_session"
 SESSION_MAX_AGE = 86400  # 24h
 
 # session → 上次校验用户状态的时间戳（每 5 分钟向认证服务重新校验一次用户是否仍启用）
-SESSION_STATUS_CHECK_INTERVAL = 300  # 5 分钟
+SESSION_STATUS_CHECK_INTERVAL = 5  # 5 秒
 SESSION_LAST_CHECK: Dict[str, float] = {}
 
 import time as _time
@@ -203,7 +203,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             username = SESSIONS[token]["username"]
             request.state.username = username
 
-            # 定期向认证服务校验用户是否仍启用（每 5 分钟一次）
+              # 定期向认证服务校验用户是否仍启用（每 5 秒一次）
             now = _time.time()
             last_check = SESSION_LAST_CHECK.get(token, 0)
             if now - last_check > SESSION_STATUS_CHECK_INTERVAL:
@@ -442,6 +442,24 @@ async def get_me(request: Request):
         "role": user["role"],
         "features": user.get("features", {}),
     }})
+
+
+@app.get("/api/sync")
+async def sync_status(request: Request):
+    """前端每 5 秒轮调：返回用户状态 + 功能开关 + 邮件配置 + 邮件运行状态。
+    如果用户已被禁用或踢下线，返回 401 让前端跳转登录。"""
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"status": "error", "detail": "未登录"}, status_code=401)
+    # 强制刷新 USERS 缓存，确保拿到最新的用户信息
+    cfg = _get_mail_config()
+    safe_cfg = {k: v for k, v in cfg.items() if k != "auth_code"} if cfg else {}
+    return JSONResponse({"status": "success", "user": {
+        "username": user["username"],
+        "name": user["name"],
+        "role": user["role"],
+        "features": user.get("features", {}),
+    }, "mail_config": safe_cfg, "mail_running": mail_reader.is_running()})
 
 
 @app.get("/api/users")

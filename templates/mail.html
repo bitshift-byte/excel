@@ -240,6 +240,32 @@ async function doLogout(){
 loadUserInfo();
 loadMailConfig();
 loadUsers();
+// 5秒轮询同步状态
+var _lastSyncState={};
+async function syncStatus(){
+  try{
+    const resp=await fetch('/api/sync');
+    if(!resp.ok){
+      if(!window._syncRedirecting){window._syncRedirecting=true;toast('账号状态已变更，正在退出...','error');setTimeout(function(){window.location.href='/login'},1500)}
+      return;
+    }
+    const d=await resp.json();
+    if(d.status!=='success'){return}
+    var u=d.user||{};
+    var feats=u.features||{};
+    var changed=false;
+    if(_lastSyncState.role!==u.role){changed=true}
+    if(JSON.stringify(_lastSyncState.features||{})!==JSON.stringify(feats)){changed=true}
+    if(_lastSyncState.name!==u.name){changed=true}
+    _lastSyncState={name:u.name,role:u.role,features:feats};
+    if(changed){
+      loadUserInfo();
+      loadMailConfig();
+    }
+    if(typeof d.mail_running!=='undefined'){updateMailStatus(d.mail_running)}
+  }catch(e){}
+}
+setInterval(syncStatus,5000);
 </script>
 </body>
 </html>
