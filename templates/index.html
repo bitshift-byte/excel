@@ -1017,6 +1017,10 @@ async function loadUserInfo(){
       document.getElementById('userRole').textContent=u.role==='admin'?'管理员':'普通用户';
       document.getElementById('userAvatar').textContent=(u.name||u.username||'?')[0].toUpperCase();
       document.getElementById('userBox').style.display='flex';
+      if(u.role!=='admin'){
+        document.querySelector('.nav-item[onclick="openRuleManager()"]').style.display='none';
+        document.querySelector('.nav-item[onclick="window.location.href=\'/mail\'"]').style.display='none';
+      }
     }
   }catch(e){window.location.href='/login'}
 }

@@ -106,11 +106,20 @@ def _load_auth_service_url() -> str:
 AUTH_SERVICE_URL = _load_auth_service_url()
 
 
+def _get_service_token() -> str:
+    """获取服务间通信密钥"""
+    return os.environ.get("SERVICE_TOKEN", "lx-internal-service-token")
+
+
 def load_users_from_auth_service() -> dict:
     """从远程认证服务加载用户列表（供 get_current_user 查询）"""
     import httpx
     try:
-        resp = httpx.get(f"{AUTH_SERVICE_URL}/users", timeout=10)
+        resp = httpx.get(
+            f"{AUTH_SERVICE_URL}/users",
+            headers={"X-Service-Token": _get_service_token()},
+            timeout=10,
+        )
         if resp.status_code == 200:
             data = resp.json()
             return {u["username"]: u for u in data.get("users", [])}
@@ -127,6 +136,12 @@ SESSIONS: Dict[str, str] = {}
 SESSION_COOKIE = "nebula_session"
 SESSION_MAX_AGE = 86400  # 24h
 
+# session → 上次校验用户状态的时间戳（每 5 分钟向认证服务重新校验一次用户是否仍启用）
+SESSION_STATUS_CHECK_INTERVAL = 300  # 5 分钟
+SESSION_LAST_CHECK: Dict[str, float] = {}
+
+import time as _time
+
 
 class AuthMiddleware(BaseHTTPMiddleware):
     """拦截需要认证的路由，未登录重定向到 /login"""
@@ -142,7 +157,23 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # 检查 session
         token = request.cookies.get(SESSION_COOKIE)
         if token and token in SESSIONS:
-            request.state.username = SESSIONS[token]
+            username = SESSIONS[token]
+            request.state.username = username
+
+            # 定期向认证服务校验用户是否仍启用（每 5 分钟一次）
+            now = _time.time()
+            last_check = SESSION_LAST_CHECK.get(token, 0)
+            if now - last_check > SESSION_STATUS_CHECK_INTERVAL:
+                is_enabled = verify_user_status_with_auth_service(username)
+                if not is_enabled:
+                    # 用户已被禁用，清除 session
+                    del SESSIONS[token]
+                    SESSION_LAST_CHECK.pop(token, None)
+                    if path.startswith("/api/"):
+                        return JSONResponse({"status": "error", "detail": "账号已被禁用"}, status_code=403)
+                    return RedirectResponse("/login", status_code=302)
+                SESSION_LAST_CHECK[token] = now
+
             return await call_next(request)
 
         # API 路由返回 401
@@ -164,6 +195,35 @@ def get_current_user(request: Request) -> Optional[dict]:
         if user_info:
             return {"username": username, "name": user_info.get("name", username), "role": user_info.get("role", "user")}
     return None
+
+
+def require_admin_user(request: Request) -> dict:
+    """要求当前用户是管理员，否则抛出 403"""
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="仅管理员可执行此操作")
+    return user
+
+
+def verify_user_status_with_auth_service(username: str) -> bool:
+    """向认证服务实时校验用户当前是否仍启用"""
+    import httpx
+    try:
+        resp = httpx.post(
+            f"{AUTH_SERVICE_URL}/verify-user",
+            json={"username": username},
+            headers={"X-Service-Token": _get_service_token()},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("user", {}).get("enabled", False)
+    except Exception:
+        pass
+    # 认证服务不可用时，保守地认为用户仍有效（避免服务故障导致全部登出）
+    return True
 
 
 # ===================== 路由 =====================
@@ -221,6 +281,7 @@ async def logout_api(request: Request):
     token = request.cookies.get(SESSION_COOKIE)
     if token and token in SESSIONS:
         del SESSIONS[token]
+    SESSION_LAST_CHECK.pop(token, None)
     resp = JSONResponse({"status": "success"})
     resp.delete_cookie(SESSION_COOKIE)
     return resp
@@ -255,6 +316,7 @@ async def list_rules():
 
 @app.post("/api/rules")
 async def create_rule(request: Request):
+    require_admin_user(request)
     body = await request.json()
     name = body.get("name", "").strip()
     if not name:
@@ -287,6 +349,7 @@ async def create_rule(request: Request):
 
 @app.put("/api/rules/{rule_id}")
 async def update_rule(rule_id: str, request: Request):
+    require_admin_user(request)
     body = await request.json()
     name = body.get("name", "").strip()
     if not name:
@@ -320,7 +383,8 @@ async def update_rule(rule_id: str, request: Request):
 
 
 @app.delete("/api/rules/{rule_id}")
-async def delete_rule(rule_id: str):
+async def delete_rule(rule_id: str, request: Request):
+    require_admin_user(request)
     if rule_id == BUILTIN_RULE_ID:
         raise HTTPException(status_code=400, detail="内置规则不可删除")
     rules = load_rules()
@@ -332,8 +396,9 @@ async def delete_rule(rule_id: str):
 
 
 @app.post("/api/rules/parse")
-async def parse_rule_excel(files: List[UploadFile] = File(...)):
+async def parse_rule_excel(request: Request, files: List[UploadFile] = File(...)):
     """上传 Excel 文件，解析所有 Sheet 的表头，用于规则创建时导入"""
+    require_admin_user(request)
     if not files:
         raise HTTPException(status_code=400, detail="请上传至少一个文件")
 
@@ -538,6 +603,7 @@ async def get_mail_config():
 
 @app.put("/api/mail/config")
 async def set_mail_config(request: Request):
+    require_admin_user(request)
     body = await request.json()
     with open(MAIL_CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(body, f, ensure_ascii=False, indent=2)
@@ -549,7 +615,8 @@ async def set_mail_config(request: Request):
 
 
 @app.post("/api/mail/start")
-async def start_mail():
+async def start_mail(request: Request):
+    require_admin_user(request)
     if not os.path.exists(MAIL_CONFIG_FILE):
         raise HTTPException(status_code=400, detail="请先保存邮件配置")
     cfg = mail_reader.load_config(MAIL_CONFIG_FILE)
@@ -558,7 +625,8 @@ async def start_mail():
 
 
 @app.post("/api/mail/stop")
-async def stop_mail():
+async def stop_mail(request: Request):
+    require_admin_user(request)
     mail_reader.stop_background()
     return JSONResponse(content={"status": "success", "running": mail_reader.is_running()})
 
@@ -575,6 +643,7 @@ async def mail_logs():
 
 @app.post("/api/mail/run")
 async def run_mail_once(request: Request):
+    require_admin_user(request)
     if not os.path.exists(MAIL_CONFIG_FILE):
         raise HTTPException(status_code=400, detail="请先保存邮件配置")
     cfg = mail_reader.load_config(MAIL_CONFIG_FILE)

@@ -1,1 +1,128 @@
-[]
+[
+  {
+    "id": "r7bf12297",
+    "name": "test-rule",
+    "standard_headers": [
+      {
+        "name": "col",
+        "source_columns": [
+          "col"
+        ]
+      }
+    ],
+    "created_at": "2026-08-16T20:23:47",
+    "updated_at": "2026-08-16T20:23:47"
+  },
+  {
+    "id": "r2520081a",
+    "name": "test-rule",
+    "standard_headers": [
+      {
+        "name": "col",
+        "source_columns": [
+          "col"
+        ]
+      }
+    ],
+    "created_at": "2026-08-16T20:23:47",
+    "updated_at": "2026-08-16T20:23:47"
+  },
+  {
+    "id": "rf905ad2f",
+    "name": "to-delete",
+    "standard_headers": [
+      {
+        "name": "col",
+        "source_columns": [
+          "col"
+        ]
+      }
+    ],
+    "created_at": "2026-08-16T20:23:47",
+    "updated_at": "2026-08-16T20:23:47"
+  },
+  {
+    "id": "r469fc00c",
+    "name": "test-rule",
+    "standard_headers": [
+      {
+        "name": "col",
+        "source_columns": [
+          "col"
+        ]
+      }
+    ],
+    "created_at": "2026-08-16T20:23:50",
+    "updated_at": "2026-08-16T20:23:50"
+  },
+  {
+    "id": "r0f2774ff",
+    "name": "test-rule",
+    "standard_headers": [
+      {
+        "name": "col",
+        "source_columns": [
+          "col"
+        ]
+      }
+    ],
+    "created_at": "2026-08-16T20:23:50",
+    "updated_at": "2026-08-16T20:23:50"
+  },
+  {
+    "id": "r9f927738",
+    "name": "to-delete",
+    "standard_headers": [
+      {
+        "name": "col",
+        "source_columns": [
+          "col"
+        ]
+      }
+    ],
+    "created_at": "2026-08-16T20:23:50",
+    "updated_at": "2026-08-16T20:23:50"
+  },
+  {
+    "id": "raa929759",
+    "name": "test-rule",
+    "standard_headers": [
+      {
+        "name": "col",
+        "source_columns": [
+          "col"
+        ]
+      }
+    ],
+    "created_at": "2026-08-16T20:24:14",
+    "updated_at": "2026-08-16T20:24:14"
+  },
+  {
+    "id": "r0dfe6249",
+    "name": "test-rule",
+    "standard_headers": [
+      {
+        "name": "col",
+        "source_columns": [
+          "col"
+        ]
+      }
+    ],
+    "created_at": "2026-08-16T20:24:14",
+    "updated_at": "2026-08-16T20:24:14"
+  },
+  {
+    "id": "rcff8e91b",
+    "name": "to-delete",
+    "standard_headers": [
+      {
+        "name": "col",
+        "source_columns": [
+          "col"
+        ]
+      }
+    ],
+    "created_at": "2026-08-16T20:24:14",
+    "updated_at": "2026-08-16T20:24:14"
+  }
+]

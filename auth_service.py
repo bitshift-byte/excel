@@ -247,12 +247,57 @@ async def login(request: Request):
     })
 
 
+# 服务间通信密钥（通过环境变量 SERVICE_TOKEN 配置，桌面应用和认证服务需一致）
+SERVICE_TOKEN = os.environ.get("SERVICE_TOKEN", "lx-internal-service-token")
+
+
+def verify_service_token(request: Request) -> bool:
+    """校验服务间通信密钥（用于主应用 ↔ 认证服务的内部接口）"""
+    token = request.headers.get("X-Service-Token", "")
+    return token == SERVICE_TOKEN
+
+
 @app.get("/users")
-async def list_users():
-    """供主应用查询用户列表（不含密码/不含 enabled）"""
+async def list_users(request: Request):
+    """供主应用查询用户列表 — 需要服务间通信密钥"""
+    if not verify_service_token(request):
+        return JSONResponse({"status": "error", "detail": "未授权"}, status_code=401)
     cfg = load_config()
     users = [public_user(u) for u in cfg.get("users", [])]
     return JSONResponse({"status": "success", "users": users})
+
+
+
+
+@app.post("/verify-user")
+async def verify_user(request: Request):
+    """
+    供主应用内部调用的用户状态验证接口。
+    接收 {username}，返回该用户当前是否启用及角色信息。
+    需要服务间通信密钥。
+    """
+    if not verify_service_token(request):
+        return JSONResponse({"status": "error", "detail": "未授权"}, status_code=401)
+
+    body = await request.json()
+    username = body.get("username", "").strip()
+    if not username:
+        return JSONResponse({"status": "error", "detail": "用户名不能为空"}, status_code=400)
+
+    cfg = load_config()
+    user = find_user(username, cfg)
+    if not user:
+        return JSONResponse({"status": "error", "detail": "用户不存在"}, status_code=404)
+
+    return JSONResponse({
+        "status": "success",
+        "user": {
+            "username": user["username"],
+            "name": user.get("name", user["username"]),
+            "role": user.get("role", "user"),
+            "enabled": user.get("enabled", True),
+        }
+    })
 
 
 # ===================== 管理后台页面路由 =====================

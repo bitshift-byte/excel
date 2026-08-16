@@ -97,3 +97,104 @@ def test_send_code_endpoint_removed(client):
     """确认 /api/send-code 已被移除"""
     resp = client.post("/api/send-code", json={"phone": "123"})
     assert resp.status_code == 401
+
+
+# ===================== 越权防护测试 =====================
+
+def test_rules_create_requires_admin(client):
+    """普通用户不能创建规则"""
+    SESSIONS["user-token"] = "user1"
+    client.cookies.set(SESSION_COOKIE, "user-token")
+    resp = client.post("/api/rules", json={"name": "test", "standard_headers": [{"name": "a", "source_columns": ["a"]}]})
+    assert resp.status_code == 403
+
+
+def test_rules_create_admin_ok(client):
+    """管理员可以创建规则"""
+    SESSIONS["admin-token"] = "admin"
+    client.cookies.set(SESSION_COOKIE, "admin-token")
+    resp = client.post("/api/rules", json={"name": "test-rule", "standard_headers": [{"name": "col", "source_columns": ["col"]}]})
+    assert resp.status_code == 200
+
+
+def test_rules_update_requires_admin(client):
+    """普通用户不能修改规则"""
+    SESSIONS["admin-token"] = "admin"
+    client.cookies.set(SESSION_COOKIE, "admin-token")
+    # 先创建一个规则
+    resp = client.post("/api/rules", json={"name": "test-rule", "standard_headers": [{"name": "col", "source_columns": ["col"]}]})
+    rule_id = resp.json()["rule"]["id"]
+    # 切换为普通用户
+    SESSIONS["user-token"] = "user1"
+    client.cookies.set(SESSION_COOKIE, "user-token")
+    resp2 = client.put(f"/api/rules/{rule_id}", json={"name": "changed", "standard_headers": []})
+    assert resp2.status_code == 403
+
+
+def test_rules_delete_requires_admin(client):
+    """普通用户不能删除规则"""
+    SESSIONS["admin-token"] = "admin"
+    client.cookies.set(SESSION_COOKIE, "admin-token")
+    resp = client.post("/api/rules", json={"name": "to-delete", "standard_headers": [{"name": "col", "source_columns": ["col"]}]})
+    rule_id = resp.json()["rule"]["id"]
+    # 切换为普通用户
+    SESSIONS["user-token"] = "user1"
+    client.cookies.set(SESSION_COOKIE, "user-token")
+    resp2 = client.delete(f"/api/rules/{rule_id}")
+    assert resp2.status_code == 403
+
+
+def test_mail_config_set_requires_admin(client):
+    """普通用户不能修改邮件配置"""
+    SESSIONS["user-token"] = "user1"
+    client.cookies.set(SESSION_COOKIE, "user-token")
+    resp = client.put("/api/mail/config", json={"enabled": False})
+    assert resp.status_code == 403
+
+
+def test_mail_start_requires_admin(client):
+    """普通用户不能启动邮件后台"""
+    SESSIONS["user-token"] = "user1"
+    client.cookies.set(SESSION_COOKIE, "user-token")
+    resp = client.post("/api/mail/start")
+    assert resp.status_code == 403
+
+
+def test_mail_stop_requires_admin(client):
+    """普通用户不能停止邮件后台"""
+    SESSIONS["user-token"] = "user1"
+    client.cookies.set(SESSION_COOKIE, "user-token")
+    resp = client.post("/api/mail/stop")
+    assert resp.status_code == 403
+
+
+def test_mail_run_requires_admin(client):
+    """普通用户不能手动运行邮件"""
+    SESSIONS["user-token"] = "user1"
+    client.cookies.set(SESSION_COOKIE, "user-token")
+    resp = client.post("/api/mail/run", json={})
+    assert resp.status_code == 403
+
+
+def test_rules_view_allowed_for_user(client):
+    """普通用户可以查看规则列表"""
+    SESSIONS["user-token"] = "user1"
+    client.cookies.set(SESSION_COOKIE, "user-token")
+    resp = client.get("/api/rules")
+    assert resp.status_code == 200
+
+
+def test_users_list_requires_admin(client):
+    """普通用户不能查看用户列表"""
+    SESSIONS["user-token"] = "user1"
+    client.cookies.set(SESSION_COOKIE, "user-token")
+    resp = client.get("/api/users")
+    assert resp.status_code == 403
+
+
+def test_users_list_admin_ok(client):
+    """管理员可以查看用户列表"""
+    SESSIONS["admin-token"] = "admin"
+    client.cookies.set(SESSION_COOKIE, "admin-token")
+    resp = client.get("/api/users")
+    assert resp.status_code == 200

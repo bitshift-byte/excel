@@ -116,8 +116,15 @@ def test_login_enabled_user_success(client):
     assert resp.json()["status"] == "success"
 
 
-def test_list_users(client):
+def test_list_users_requires_service_token(client):
+    """没有服务密钥时 /users 返回 401"""
     resp = client.get("/users")
+    assert resp.status_code == 401
+
+
+def test_list_users_with_service_token(client):
+    """有服务密钥时 /users 返回用户列表"""
+    resp = client.get("/users", headers={"X-Service-Token": "lx-internal-service-token"})
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "success"
@@ -126,6 +133,33 @@ def test_list_users(client):
     # 不应返回密码
     for u in data["users"]:
         assert "password" not in u
+
+
+def test_verify_user_with_service_token(client):
+    """verify-user 接口需要服务密钥"""
+    # 无密钥
+    resp = client.post("/verify-user", json={"username": "admin"})
+    assert resp.status_code == 401
+    # 有密钥
+    resp2 = client.post("/verify-user", json={"username": "admin"}, headers={"X-Service-Token": "lx-internal-service-token"})
+    assert resp2.status_code == 200
+    data = resp2.json()
+    assert data["status"] == "success"
+    assert data["user"]["username"] == "admin"
+    assert data["user"]["enabled"] is True
+
+
+def test_verify_user_nonexistent(client):
+    """verify-user 对不存在的用户返回 404"""
+    resp = client.post("/verify-user", json={"username": "nobody"}, headers={"X-Service-Token": "lx-internal-service-token"})
+    assert resp.status_code == 404
+
+
+def test_verify_user_disabled(client):
+    """verify-user 对禁用用户返回 enabled=False"""
+    resp = client.post("/verify-user", json={"username": "disabled_user"}, headers={"X-Service-Token": "lx-internal-service-token"})
+    assert resp.status_code == 200
+    assert resp.json()["user"]["enabled"] is False
 
 
 def test_default_config_created_on_first_run(tmp_path, monkeypatch):
