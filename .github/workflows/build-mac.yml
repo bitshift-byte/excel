@@ -86,7 +86,6 @@ jobs:
             1. 下载 `LX捞数据-macOS-${{ steps.ver.outputs.tag }}.zip`
             2. 解压后得到 `LX.app`
             3. 双击运行（首次运行可能需要在系统设置→隐私与安全性中允许运行）
-            4. 默认账号：admin / admin123
 
             ### 注意事项
             - 此版本为 macOS (Apple Silicon) 版本
