@@ -127,6 +127,29 @@ def _get_service_token() -> str:
     return os.environ.get("SERVICE_TOKEN", "lx-internal-service-token")
 
 
+def _get_device_id() -> str:
+    """获取本机唯一设备标识（持久化存储在 data 目录）。
+    首次调用时生成 UUID 并写入文件，后续读取同一值。"""
+    device_file = os.path.join(DATA_DIR, "device_id.txt")
+    try:
+        if os.path.exists(device_file):
+            with open(device_file, "r", encoding="utf-8") as f:
+                did = f.read().strip()
+                if did:
+                    return did
+    except Exception:
+        pass
+    # 生成新的设备 ID
+    import uuid as _uuid
+    did = _uuid.uuid4().hex
+    try:
+        with open(device_file, "w", encoding="utf-8") as f:
+            f.write(did)
+    except Exception:
+        pass
+    return did
+
+
 def load_users_from_auth_service() -> dict:
     """从远程认证服务加载用户列表（供 get_current_user 查询）"""
     import httpx
@@ -173,7 +196,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # 检查 session
         token = request.cookies.get(SESSION_COOKIE)
         if token and token in SESSIONS:
-            username = SESSIONS[token]
+            username = SESSIONS[token]["username"]
             request.state.username = username
 
             # 定期向认证服务校验用户是否仍启用（每 5 分钟一次）
@@ -188,6 +211,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     if path.startswith("/api/"):
                         return JSONResponse({"status": "error", "detail": reason or "账号已被禁用"}, status_code=403)
                     return RedirectResponse("/login", status_code=302)
+                # 发送心跳到认证服务，刷新设备绑定活跃时间
+                try:
+                    import httpx
+                    httpx.post(
+                        f"{AUTH_SERVICE_URL}/heartbeat",
+                        json={"username": username, "device_id": _get_device_id()},
+                        headers={"X-Service-Token": _get_service_token()},
+                        timeout=5,
+                    )
+                except Exception:
+                    pass
                 SESSION_LAST_CHECK[token] = now
 
             return await call_next(request)
@@ -285,8 +319,8 @@ def get_app_config() -> dict:
     return APP_CONFIG_CACHE
 
 
-def get_mail_config() -> dict:
-    """获取邮件配置"""
+def _get_mail_config() -> dict:
+    """获取邮件配置（内部函数）"""
     return get_app_config().get("mail_config", {})
 
 
@@ -317,11 +351,25 @@ async def login_api(request: Request):
     password = body.get("password", "").strip()
     if not username or not password:
         return JSONResponse({"status": "error", "detail": "用户名和密码不能为空"}, status_code=400)
+
+    # 登录前先清除该用户的旧设备绑定（解决同一台电脑重复登录被拒的问题）
+    # 这使得"最后登录者获胜"：新登录会替换旧会话，同时保持单设备在线
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{AUTH_SERVICE_URL}/logout",
+                json={"username": username},
+                headers={"X-Service-Token": _get_service_token()},
+                timeout=5,
+            )
+    except Exception:
+        pass  # 如果清除失败，继续尝试登录
+
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 f"{AUTH_SERVICE_URL}/login",
-                json={"username": username, "password": password},
+                json={"username": username, "password": password, "device_id": _get_device_id()},
                 timeout=15,
             )
     except httpx.ConnectError:
@@ -360,7 +408,7 @@ async def login_api(request: Request):
 async def logout_api(request: Request):
     token = request.cookies.get(SESSION_COOKIE)
     if token and token in SESSIONS:
-        username = SESSIONS[token]["username"]
+        username = SESSIONS[token]["username"]["username"]
         # 通知认证服务清除设备绑定
         import httpx
         try:
@@ -422,21 +470,14 @@ async def index(request: Request):
 
 @app.get("/mail", response_class=HTMLResponse)
 async def mail_page(request: Request):
-    user = get_current_user(request)
-    if not user:
-        return RedirectResponse("/login", status_code=302)
-    # 检查用户是否有邮件功能权限
-    user_features = user.get("features", {})
-    if not user_features.get("mail_reader", True):
-        return RedirectResponse("/", status_code=302)
-    with open(_resource_path("templates/mail.html"), "r", encoding="utf-8") as f:
-        return f.read()
+    # 邮件捞取已整合为主页 SPA 面板，重定向到首页
+    return RedirectResponse("/#mail", status_code=302)
 
 
 @app.get("/mail/results", response_class=HTMLResponse)
 async def mail_results_page(request: Request):
-    with open(_resource_path("templates/results.html"), "r", encoding="utf-8") as f:
-        return f.read()
+    # 处理结果已整合为主页 SPA 面板，重定向到首页
+    return RedirectResponse("/#results", status_code=302)
 
 
 @app.get("/api/features")
@@ -590,7 +631,7 @@ async def download():
 @app.get("/api/mail/config")
 async def get_mail_config():
     """获取邮件配置（从认证服务获取，桌面应用只读）"""
-    cfg = get_mail_config()
+    cfg = _get_mail_config()
     # 不返回 auth_code 给前端
     safe_cfg = {k: v for k, v in cfg.items() if k != "auth_code"} if cfg else {}
     return JSONResponse(content={"status": "success", "config": safe_cfg, "running": mail_reader.is_running()})
@@ -605,7 +646,7 @@ async def start_mail(request: Request):
     # 检查用户是否有邮件功能权限
     if not user.get("features", {}).get("mail_reader", True):
         raise HTTPException(status_code=403, detail="您没有邮件读取功能的权限")
-    cfg = get_mail_config()
+    cfg = _get_mail_config()
     if not cfg or not cfg.get("email"):
         raise HTTPException(status_code=400, detail="邮件配置未设置，请在管理后台配置")
     cfg["output_dir"] = OUTPUT_DIR
@@ -634,7 +675,7 @@ async def mail_logs():
 @app.post("/api/mail/run")
 async def run_mail_once(request: Request):
     require_admin_user(request)
-    cfg = get_mail_config()
+    cfg = _get_mail_config()
     if not cfg or not cfg.get("email"):
         raise HTTPException(status_code=400, detail="邮件配置未设置，请在管理后台配置")
     cfg["output_dir"] = OUTPUT_DIR
@@ -692,7 +733,7 @@ async def preview_mail_result(filename: str):
         ws = wb[sname]
         rows = []
         for i, row in enumerate(ws.iter_rows(values_only=True)):
-            if i >= 20:
+            if i >= 21:
                 break
             rows.append([serialize_cell(c) for c in row])
         sheets.append({"sheet_name": sname, "rows": rows, "total_rows": ws.max_row})
@@ -784,7 +825,7 @@ if __name__ == "__main__":
 
     threading.Thread(target=_run_server, daemon=True).start()
 
-    webview.create_window(
+    window = webview.create_window(
         "LX捞数据",
         f"http://127.0.0.1:{port}",
         width=1280,
@@ -792,4 +833,22 @@ if __name__ == "__main__":
         min_size=(900, 600),
         js_api=Api(),
     )
+
+    # 窗口关闭时通知认证服务清除所有设备绑定，避免下次登录被拒
+    def _on_closing():
+        for token, session in list(SESSIONS.items()):
+            username = session["username"]
+            try:
+                import httpx
+                httpx.post(
+                    f"{AUTH_SERVICE_URL}/logout",
+                    json={"username": username},
+                    headers={"X-Service-Token": _get_service_token()},
+                    timeout=3,
+                )
+            except Exception:
+                pass
+
+    window.events.closing += _on_closing
+
     webview.start()

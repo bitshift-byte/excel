@@ -82,7 +82,7 @@
         </div>
       </div>
 
-      <div class="card" style="margin-bottom:16px">
+      <div class="card admin-only" style="margin-bottom:16px">
         <div class="card-head">
           <div class="ch-icon"><svg><use href="#i-zap"/></svg></div>
           <span class="ch-title">手动操作</span>
@@ -143,8 +143,7 @@ function hideLoading(){document.getElementById('loadingOverlay').classList.remov
 
 async function loadMailConfig(){
   try{
-    const resp=await fetch('/api/mail/config');
-    const data=await resp.json();
+    const data=await apiFetch('/api/mail/config');
     if(data.status==='success'){
       const cfg=data.config||{};
       document.getElementById('cfgEmail').textContent=cfg.email||'未配置';
@@ -179,12 +178,20 @@ async function loadMailConfig(){
     badge.style.background='var(--muted)';badge.style.color='var(--text-4)';
   }
 }
+async function apiFetch(url, opts){
+  const resp=await fetch(url, opts);
+  if(!resp.ok){
+    let detail='HTTP '+resp.status;
+    try{const e=await resp.json();detail=e.detail||detail}catch(_){}
+    return {status:'error', detail:detail};
+  }
+  return await resp.json();
+}
 async function runMailOnce(){
   const date=document.getElementById('mailDate').value;
   showLoading('正在执行邮件处理...');
   try{
-    const resp=await fetch('/api/mail/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date})});
-    const data=await resp.json();
+    const data=await apiFetch('/api/mail/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date})});
     if(data.status==='success'){
       toast('处理完成，处理了 '+data.handled+' 封邮件');
     }else{toast('处理失败: '+(data.detail||'未知错误'),'error')}
@@ -193,9 +200,8 @@ async function runMailOnce(){
 }
 async function loadUsers(){
   try{
-    const resp=await fetch('/api/users');
-    if(resp.status===403){document.getElementById('userMgmtCard').style.display='none';return}
-    const data=await resp.json();
+    const data=await apiFetch('/api/users');
+    if(data.status==='error'&&data.detail&&data.detail.includes('管理员')){document.getElementById('userMgmtCard').style.display='none';return}
     if(data.status==='success'){
       document.getElementById('userMgmtCard').style.display='block';
       const users=data.users||[];
@@ -221,6 +227,7 @@ async function loadUserInfo(){
       document.getElementById('userRole').textContent=u.role==='admin'?'管理员':'普通用户';
       document.getElementById('userAvatar').textContent=(u.name||u.username||'?')[0].toUpperCase();
       document.getElementById('userBox').style.display='flex';
+      if(u.role!=='admin'){document.querySelectorAll('.admin-only').forEach(function(el){el.style.display='none'})}
     }
   }catch(e){window.location.href='/login'}
 }

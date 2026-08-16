@@ -6,6 +6,24 @@
 <title>LX捞数据</title>
 <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
+<style>
+.mail-wrap{width:100%}
+.action-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.action-bar .spacer{flex:1}
+.section-desc{font-size:12px;color:var(--text-4);margin-top:2px}
+.date-group{margin-bottom:10px}
+.date-group-head{cursor:pointer;display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--muted);border-radius:var(--r-sm);user-select:none;transition:background .15s}
+.date-group-head:hover{background:var(--muted-2)}
+.date-group-head .chevron{transition:transform .2s;color:var(--text-4);width:14px;height:14px;flex-shrink:0}
+.date-group-head.collapsed .chevron{transform:rotate(-90deg)}
+.date-group-head .dg-title{font-weight:700;font-size:13px;color:var(--primary)}
+.date-group-body{overflow:hidden}
+.date-group-body.hidden{display:none}
+.table-scroll{max-height:340px;overflow-y:auto;border:1px solid var(--border-l);border-radius:0 0 var(--r-sm) var(--r-sm)}
+.log-box{font-family:monospace;font-size:12px;line-height:1.8;max-height:260px;overflow-y:auto;background:var(--muted);border-radius:var(--r-sm);padding:12px;color:var(--text-2)}
+.badge-hidden{display:none!important}
+.hidden{display:none!important}
+</style>
 </head>
 <body>
 
@@ -48,11 +66,14 @@
     </div>
     <nav class="sidebar-nav">
       <div class="nav-section">
-        <div class="nav-section-title">功能</div>
-        <div class="nav-item active" onclick="goStep(1)"><svg><use href="#i-upload"/></svg> 文件合并</div>
-        <div class="nav-item" onclick="openRuleManager()"><svg><use href="#i-layers"/></svg> 规则列表</div>
-        <div class="nav-item" onclick="window.location.href='/mail'"><svg><use href="#i-mail"/></svg> 邮件设置</div>
-        <div class="nav-item" onclick="window.location.href='/mail/results'"><svg><use href="#i-download"/></svg> 处理结果</div>
+        <div class="nav-section-title">数据合并</div>
+        <div class="nav-item active" data-nav="merge" onclick="goStep(1)"><svg><use href="#i-upload"/></svg> 文件合并</div>
+        <div class="nav-item" data-nav="rules" onclick="openRuleManager()"><svg><use href="#i-layers"/></svg> 规则列表</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-title">邮件捞取</div>
+        <div class="nav-item" data-nav="mail" onclick="showStep('mail')"><svg><use href="#i-mail"/></svg> 邮件捞取</div>
+        <div class="nav-item" data-nav="results" onclick="showStep('results')"><svg><use href="#i-download"/></svg> 处理结果</div>
       </div>
       <div class="nav-section">
         <div class="nav-section-title">帮助</div>
@@ -159,10 +180,20 @@
               <span class="ch-title">按省份筛选</span>
               <span class="ch-sub">可选 · 不选则导出全部数据</span>
               <div class="ch-spacer"></div>
-              <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="selectAllProv()">全选</button>
-              <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="clearProv()">清空</button>
+
             </div>
             <div class="card-pad" style="padding-top:16px">
+              <div class="prov-groups" id="provGroups">
+                <button class="prov-group-btn" onclick="selectProvGroup('华北')">华北</button>
+                <button class="prov-group-btn" onclick="selectProvGroup('东北')">东北</button>
+                <button class="prov-group-btn" onclick="selectProvGroup('华东')">华东</button>
+                <button class="prov-group-btn" onclick="selectProvGroup('华中')">华中</button>
+                <button class="prov-group-btn" onclick="selectProvGroup('华南')">华南</button>
+                <button class="prov-group-btn" onclick="selectProvGroup('西南')">西南</button>
+                <button class="prov-group-btn" onclick="selectProvGroup('西北')">西北</button>
+                <button class="prov-group-btn" onclick="selectAllProv()">全选</button>
+                <button class="prov-group-btn" onclick="clearProv()">清空</button>
+              </div>
               <div class="prov-search-wrap">
                 <svg><use href="#i-search"/></svg>
                 <input type="text" class="prov-search" id="provSearch" placeholder="搜索省份..." oninput="filterProv()">
@@ -209,6 +240,125 @@
           <div id="rulesContainer"></div>
         </div>
 
+<!-- ===== Mail Page (邮件捞取) ===== -->
+        <div class="step-panel" id="stepMail">
+          <div class="mail-wrap">
+            <div class="card" style="margin-bottom:16px">
+              <div class="card-head">
+                <div class="ch-icon"><svg><use href="#i-mail"/></svg></div>
+                <span class="ch-title">邮件配置状态</span>
+                <span class="ch-sub">配置由管理员在后台统一管理</span>
+                <div class="ch-spacer"></div>
+                <span id="mailStatusBadge" class="badge" style="padding:4px 12px;border-radius:999px;font-size:12px"></span>
+              </div>
+              <div class="card-pad" id="mailConfigDisplay" style="padding:16px 20px">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                  <div>
+                    <div style="font-size:12px;color:var(--text-4);margin-bottom:4px">邮箱地址</div>
+                    <div id="cfgEmail" style="font-size:14px;color:var(--text-2);font-weight:600">-</div>
+                  </div>
+                  <div>
+                    <div style="font-size:12px;color:var(--text-4);margin-bottom:4px">IMAP服务器</div>
+                    <div id="cfgImap" style="font-size:14px;color:var(--text-2);font-weight:600">-</div>
+                  </div>
+                  <div>
+                    <div style="font-size:12px;color:var(--text-4);margin-bottom:4px">主题关键词</div>
+                    <div id="cfgKeywords" style="font-size:14px;color:var(--text-2);font-weight:600">-</div>
+                  </div>
+                  <div>
+                    <div style="font-size:12px;color:var(--text-4);margin-bottom:4px">筛选省份</div>
+                    <div id="cfgProvinces" style="font-size:14px;color:var(--text-2);font-weight:600">-</div>
+                  </div>
+                  <div>
+                    <div style="font-size:12px;color:var(--text-4);margin-bottom:4px">轮询间隔</div>
+                    <div id="cfgInterval" style="font-size:14px;color:var(--text-2);font-weight:600">-</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card admin-only" style="margin-bottom:16px">
+              <div class="card-head">
+                <div class="ch-icon"><svg><use href="#i-zap"/></svg></div>
+                <span class="ch-title">手动操作</span>
+              </div>
+              <div class="card-pad" style="padding:16px 20px;display:flex;gap:12px;flex-wrap:wrap">
+                <div style="flex:1;min-width:200px">
+                  <label class="rule-form-label" style="margin-bottom:6px">处理日期（留空 = 今天）</label>
+                  <input type="date" class="rule-form-input" id="mailDate" style="margin-bottom:0">
+                </div>
+                <button class="btn btn-primary" style="align-self:flex-end" onclick="runMailOnce()">立即执行一次</button>
+              </div>
+            </div>
+
+            <div class="card card-pad" style="margin-top:16px;text-align:center">
+              <button class="btn btn-primary" onclick="showStep('results')"><svg><use href="#i-download"/></svg> 查看处理结果</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== Results Page (处理结果) ===== -->
+        <div class="step-panel" id="stepResults">
+          <div class="mail-wrap">
+            <div class="card card-pad" style="margin-bottom:20px">
+              <div class="action-bar admin-only">
+                <span class="badge badge-accent badge-hidden" id="mailStatusRunning">● 运行中</span>
+                <span class="badge badge-amber" id="mailStatusStopped">○ 已停止</span>
+                <div class="spacer"></div>
+                <button class="btn btn-ghost" style="padding:7px 16px;font-size:13px" onclick="startMail()">启动轮询</button>
+                <button class="btn btn-ghost" style="padding:7px 16px;font-size:13px" onclick="stopMail()">停止轮询</button>
+                <button class="btn btn-primary btn-lg" onclick="openRunModal()"><svg style="width:16px;height:16px"><use href="#i-zap"/></svg> 立即执行</button>
+              </div>
+            </div>
+
+            <div class="card" style="margin-bottom:20px">
+              <div class="card-head">
+                <div class="ch-icon"><svg><use href="#i-download"/></svg></div>
+                <div>
+                  <div class="ch-title">处理结果</div>
+                  <div class="section-desc">合并生成的 Excel，按日期分组</div>
+                </div>
+                <div class="ch-spacer"></div>
+                <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="loadMailResults()">刷新</button>
+              </div>
+              <div class="card-pad" style="padding-top:14px">
+                <div id="mailResults"></div>
+              </div>
+            </div>
+
+            <div class="card" style="margin-bottom:20px">
+              <div class="card-head">
+                <div class="ch-icon"><svg><use href="#i-mail"/></svg></div>
+                <div>
+                  <div class="ch-title">捞取任务</div>
+                  <div class="section-desc">每轮捞到的邮件及附件，按日期分组</div>
+                </div>
+                <div class="ch-spacer"></div>
+                <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="loadMailTasks()">刷新</button>
+              </div>
+              <div class="card-pad" style="padding-top:14px">
+                <div id="mailTasks"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head" style="cursor:pointer" onclick="toggleLog()">
+                <div class="ch-icon"><svg><use href="#i-refresh"/></svg></div>
+                <div>
+                  <div class="ch-title">处理日志</div>
+                  <div class="section-desc">最近轮询的详细记录（点击展开/收起）</div>
+                </div>
+                <div class="ch-spacer"></div>
+                <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="event.stopPropagation();loadMailLogs()">刷新</button>
+                <svg id="logChevron" style="width:16px;height:16px;color:var(--text-4);transition:transform .2s"><use href="#i-chevron-right"/></svg>
+              </div>
+              <div class="card-pad hidden" id="logBody" style="padding-top:14px">
+                <div class="log-box" id="mailLogs"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -222,7 +372,6 @@
     </div>
   </div>
 </div>
-
 <!-- Loading -->
 <div class="loading-overlay" id="loadingOverlay">
   <div class="loading-box">
@@ -254,6 +403,29 @@
       <p style="padding-left:12px">• 查看合并统计、预览数据、下载 Excel</p>
     </div>
     <button class="btn btn-primary btn-block" style="margin-top:20px" onclick="document.getElementById('helpModal').classList.remove('show')">知道了</button>
+  </div>
+</div>
+
+
+<div class="modal-overlay" id="runModal" onclick="if(event.target===this)closeRunModal()">
+  <div class="modal-box">
+    <h3>选择处理日期</h3>
+    <div class="modal-content">
+      <p>选择要处理的邮件日期，会捞取该日期一整天的邮件并合并。</p>
+      <input type="date" id="runDate" class="rule-form-input" style="margin-top:12px;padding:10px 14px">
+    </div>
+    <div style="display:flex;gap:10px;margin-top:20px">
+      <button class="btn btn-ghost" style="flex:1" onclick="closeRunModal()">取消</button>
+      <button class="btn btn-primary" style="flex:1" onclick="confirmRun()">立即执行</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="previewModal" onclick="if(event.target===this)closePreview()">
+  <div class="modal-box" style="max-width:900px">
+    <h3 style="display:flex;align-items:center;gap:8px"><svg style="width:18px;height:18px;color:var(--primary)"><use href="#i-file"/></svg> <span id="previewFilename">预览</span></h3>
+    <div id="previewContent" style="margin-top:12px"></div>
+    <button class="btn btn-ghost" style="margin-top:16px;width:100%" onclick="closePreview()">关闭</button>
   </div>
 </div>
 
@@ -290,14 +462,26 @@ const STEP_TITLES=[
 function showStep(n){
   [1,2,3].forEach(i=>document.getElementById('step'+i).classList.toggle('on',i===n));
   document.getElementById('stepRules').classList.toggle('on',n==='rules');
-  const isRules=n==='rules';
+  document.getElementById('stepMail').classList.toggle('on',n==='mail');
+  document.getElementById('stepResults').classList.toggle('on',n==='results');
+  const isWizard=typeof n==='number';
   const progress=document.querySelector('.progress');
-  if(progress)progress.style.visibility=isRules?'hidden':'visible';
-  if(isRules){
-    document.getElementById('topbarTitle').textContent='规则管理';
-    document.getElementById('topbarSub').textContent='管理目标列名规则';
-    document.querySelectorAll('.nav-item').forEach(item=>item.classList.remove('active'));
-    document.querySelector('.nav-item[onclick="openRuleManager()"]')?.classList.add('active');
+  if(progress)progress.style.visibility=isWizard?'visible':'hidden';
+  document.querySelectorAll('.nav-item').forEach(item=>item.classList.remove('active'));
+  if(n==='rules'){
+    document.getElementById('topbarTitle').textContent='规则列表';
+    document.getElementById('topbarSub').textContent='规则由管理员在后台统一配置，此处仅查看';
+    document.querySelector('.nav-item[data-nav="rules"]')?.classList.add('active');
+  }else if(n==='mail'){
+    document.getElementById('topbarTitle').textContent='邮件捞取';
+    document.getElementById('topbarSub').textContent='查看邮件配置状态，手动执行邮件捞取';
+    document.querySelector('.nav-item[data-nav="mail"]')?.classList.add('active');
+    loadMailConfig();
+  }else if(n==='results'){
+    document.getElementById('topbarTitle').textContent='处理结果';
+    document.getElementById('topbarSub').textContent='邮件捞取生成的文件、任务记录与日志';
+    document.querySelector('.nav-item[data-nav="results"]')?.classList.add('active');
+    loadMailStatus();loadMailLogs();loadMailResults();loadMailTasks();
   }else{
     [1,2,3].forEach(i=>{const d=document.getElementById('sd'+i),l=document.getElementById('sl'+i);d.className='pg-circle'+(i<n?' done':i===n?' active':'');l.className='pg-label'+(i<n?' done':i===n?' active':'')});
     document.getElementById('sline1').className='pg-line'+(n>1?' done':'');
@@ -305,8 +489,7 @@ function showStep(n){
     const t=STEP_TITLES[n-1];
     document.getElementById('topbarTitle').textContent=t.title;
     document.getElementById('topbarSub').textContent=t.sub;
-    document.querySelectorAll('.nav-item').forEach(item=>item.classList.remove('active'));
-    document.querySelector('.nav-item[onclick="goStep(1)"]')?.classList.add('active');
+    document.querySelector('.nav-item[data-nav="merge"]')?.classList.add('active');
   }
   document.getElementById('stickyBar').style.display=n===2?'flex':'none';
   document.getElementById('stickyBar3').style.display=n===3?'flex':'none';
@@ -353,8 +536,7 @@ async function analyzeFiles(){
   const fd=new FormData();
   selectedFiles.forEach(f=>fd.append('files',f));
   try{
-    const resp=await fetch('/api/analyze',{method:'POST',body:fd});
-    const data=await resp.json();
+    const data=await apiFetch('/api/analyze',{method:'POST',body:fd});
     if(data.status==='success'){
       analyzeData=data;initSheetStates(data);renderSheetTables(data);
       if(data.regions)renderProvTags(data.regions);
@@ -422,7 +604,7 @@ function renderSheetTables(data){
     sheets.forEach((s,si)=>{
       const key=`${s.filename}::${s.sheet_name}`;const st=sheetStates[key];const sk=safeId(key);
       html+=`<div class="panel ${si===0?'on':''}" id="panel-${sk}"><div class="panel-body">`;
-      html+=`<table class="etbl"><thead><tr>`;
+      html+=`<div class="etbl-wrap"><table class="etbl"><thead><tr>`;
       s.headers.forEach((h,i)=>{
         const mod=st.headers[i]!==st.originalHeaders[i];
         html+=`<th><div class="cn">${i+1}</div>`;
@@ -431,7 +613,7 @@ function renderSheetTables(data){
       });
       html+=`</tr></thead><tbody>`;
       (st.sample_rows||[]).forEach(row=>{html+=`<tr>`;s.headers.forEach((_,i)=>{html+=`<td title="${esc(row[i]||'')}">${esc(row[i]||'')}</td>`});html+=`</tr>`});
-      html+=`</tbody></table>`;
+      html+=`</tbody></table></div>`;
       html+=`<datalist id="cols-${sk}">${data.all_columns.map(c=>`<option value="${esc(c)}">`).join('')}</datalist>`;
       html+=`</div></div>`;
     });
@@ -492,6 +674,28 @@ function updateProvBar(){
 function selectAllProv(){document.querySelectorAll('.prov-tag').forEach(t=>{if(t.style.display!=='none'){selectedProvinces.add(t.dataset.name);t.classList.add('on')}});updateProvBar()}
 function clearProv(){selectedProvinces.clear();document.querySelectorAll('.prov-tag').forEach(t=>t.classList.remove('on'));updateProvBar()}
 function filterProv(){const q=document.getElementById('provSearch').value.trim().toLowerCase();document.querySelectorAll('.prov-tag').forEach(t=>{t.style.display=!q||t.dataset.name.toLowerCase().includes(q)?'':'none'})}
+const PROV_GROUPS={
+  '华北':['北京市','天津市','河北省','山西省','内蒙古自治区'],
+  '东北':['辽宁省','吉林省','黑龙江省'],
+  '华东':['上海市','江苏省','浙江省','安徽省','福建省','江西省','山东省'],
+  '华中':['河南省','湖北省','湖南省'],
+  '华南':['广东省','广西壮族自治区','海南省'],
+  '西南':['重庆市','四川省','贵州省','云南省','西藏自治区'],
+  '西北':['陕西省','甘肃省','青海省','宁夏回族自治区','新疆维吾尔自治区']
+};
+function selectProvGroup(group){
+  const provs=PROV_GROUPS[group];if(!provs)return;
+  const allSelected=provs.every(p=>selectedProvinces.has(p));
+  if(allSelected){provs.forEach(p=>selectedProvinces.delete(p));}
+  else{provs.forEach(p=>selectedProvinces.add(p));}
+  document.querySelectorAll('.prov-tag').forEach(t=>{
+    if(provs.includes(t.dataset.name)){
+      t.classList.toggle('on',selectedProvinces.has(t.dataset.name));
+      if(t.style.display==='none'&&selectedProvinces.has(t.dataset.name)){t.style.display='';}
+    }
+  });
+  updateProvBar();
+}
 
 // Merge & Filter
 async function processMerge(){
@@ -513,8 +717,7 @@ async function processMerge(){
   const ruleId=document.getElementById('ruleSelect')?document.getElementById('ruleSelect').value:'';
   if(ruleId)fd.append('rule_id',ruleId);
   try{
-    const resp=await fetch('/api/process',{method:'POST',body:fd});
-    const data=await resp.json();
+    const data=await apiFetch('/api/process',{method:'POST',body:fd});
     if(data.status==='success'){renderResult(data.stats,data.previews);showStep(3);const action = data.stats.provinces && data.stats.provinces.length > 0 ? '筛选' : '合并'; toast(`${action}完成，共 ${data.stats.filtered_rows} 行`)}
     else{toast('处理失败: '+(data.detail||'未知错误'),'error')}
   }catch(err){toast('请求出错: '+err.message,'error')}
@@ -560,8 +763,7 @@ function closeRuleManager(){
 }
 async function loadRulesData(){
   try{
-    const resp=await fetch('/api/rules');
-    const data=await resp.json();
+    const data=await apiFetch('/api/rules');
     if(data.status==='success'){rulesData=data.rules;renderRuleList()}
   }catch(e){toast('加载规则失败','error')}
 }
@@ -737,6 +939,7 @@ let stdHeaderCounter=100;
 let ruleParsedSheets=[];
 
 async function onRuleFileUpload(input){
+  toast('规则管理已移至管理后台','error');return;
   const file=input.files[0];
   if(!file)return;
   showLoading('正在解析 Excel...');
@@ -1023,16 +1226,18 @@ async function loadUserInfo(){
       // 按用户功能权限控制导航项显示
       var feats=u.features||{};
       // 文件合并
-      var navMerge=document.querySelector('.nav-item[onclick="goStep(1)"]');
+      var navMerge=document.querySelector('.nav-item[data-nav="merge"]');
       if(navMerge&&!feats.file_merge)navMerge.style.display='none';
       // 规则列表
-      var navRule=document.querySelector('.nav-item[onclick="openRuleManager()"]');
+      var navRule=document.querySelector('.nav-item[data-nav="rules"]');
       if(navRule&&!feats.rule_management)navRule.style.display='none';
-      // 邮件设置（仅管理员且有邮件权限）
-      var navMail=document.querySelector('.nav-item[onclick="window.location.href=\'/mail\'"]');
-      if(navMail&&(u.role!=='admin'||!feats.mail_reader))navMail.style.display='none';
+      // 邮件捞取（有邮件权限才显示）
+      var navMail=document.querySelector('.nav-item[data-nav="mail"]');
+      if(navMail&&!feats.mail_reader)navMail.style.display='none';
       // 处理结果（有邮件权限才显示）
-      var navResults=document.querySelector('.nav-item[onclick="window.location.href=\'/mail/results\'"]');
+      var navResults=document.querySelector('.nav-item[data-nav="results"]');
+      // 非管理员隐藏邮件操作按钮（启动/停止/立即执行需要管理员权限）
+      if(u.role!=="admin"){document.querySelectorAll(".admin-only").forEach(function(el){el.style.display="none"})}
       if(navResults&&!feats.mail_reader)navResults.style.display='none';
     }
   }catch(e){window.location.href='/login'}
@@ -1080,9 +1285,257 @@ async function loadVersion(){
   }catch(e){}
 }
 
+
+// ==================== Mail Reader (邮件捞取) ====================
+
+async function loadMailConfig(){
+  try{
+    const data=await apiFetch('/api/mail/config');
+    if(data.status==='success'){
+      const cfg=data.config||{};
+      document.getElementById('cfgEmail').textContent=cfg.email||'未配置';
+      document.getElementById('cfgImap').textContent=cfg.imap_host||'-';
+      document.getElementById('cfgKeywords').textContent=(cfg.subject_keywords||[]).join('、')||'无';
+      document.getElementById('cfgProvinces').textContent=(cfg.provinces||[]).join('、')||'全量';
+      document.getElementById('cfgInterval').textContent=(cfg.poll_interval_seconds||3600)+' 秒';
+      document.getElementById('mailDate').value=cfg.date||'';
+      const badge=document.getElementById('mailStatusBadge');
+      if(data.running){
+        badge.textContent='运行中';
+        badge.style.background='var(--accent-bg)';badge.style.color='var(--accent-d)';
+      }else if(cfg.enabled){
+        badge.textContent='已启用（未运行）';
+        badge.style.background='var(--amber-bg)';badge.style.color='var(--amber)';
+      }else{
+        badge.textContent='未启用';
+        badge.style.background='var(--muted)';badge.style.color='var(--text-4)';
+      }
+    }
+  }catch(e){
+    document.getElementById('cfgEmail').textContent='未配置';
+    document.getElementById('cfgImap').textContent='-';
+    document.getElementById('cfgKeywords').textContent='-';
+    document.getElementById('cfgProvinces').textContent='-';
+    document.getElementById('cfgInterval').textContent='-';
+    const badge=document.getElementById('mailStatusBadge');
+    badge.textContent='未配置';
+    badge.style.background='var(--muted)';badge.style.color='var(--text-4)';
+  }
+}
+
+// Helper: fetch JSON with proper error handling
+async function apiFetch(url, opts){
+  const resp=await fetch(url, opts);
+  if(!resp.ok){
+    let detail='HTTP '+resp.status;
+    try{const e=await resp.json();detail=e.detail||detail}catch(_){}
+    return {status:'error', detail:detail};
+  }
+  return await resp.json();
+}
+
+async function runMailOnce(){
+  const date=document.getElementById('mailDate').value;
+  showLoading('正在执行邮件处理...');
+  try{
+    const data=await apiFetch('/api/mail/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date})});
+    if(data.status==='success'){
+      toast('处理完成，处理了 '+data.handled+' 封邮件');
+    }else{toast('处理失败: '+(data.detail||'未知错误'),'error')}
+  }catch(e){toast('请求出错: '+e.message,'error')}
+  finally{hideLoading()}
+}
+
+// ==================== Mail Results ====================
+
+function toggleDateGroup(head){
+  head.classList.toggle('collapsed');
+  head.parentElement.querySelector('.date-group-body').classList.toggle('hidden');
+}
+function toggleLog(){
+  const body=document.getElementById('logBody');
+  body.classList.toggle('hidden');
+  document.getElementById('logChevron').style.transform=body.classList.contains('hidden')?'rotate(0)':'rotate(90deg)';
+}
+
+function renderDateGroups(containerId, byDate, renderRow){
+  const el=document.getElementById(containerId);
+  const dates=Object.keys(byDate).sort().reverse();
+  if(dates.length===0){el.innerHTML='<div style="color:var(--text-4);font-size:13px;padding:8px 0">暂无数据</div>';return}
+  let html='';
+  dates.forEach((date,i)=>{
+    const rows=byDate[date];
+    const collapsed=i>0;
+    html+='<div class="date-group">';
+    html+='<div class="date-group-head'+(collapsed?' collapsed':'')+'" onclick="toggleDateGroup(this)">';
+    html+='<svg class="chevron"><use href="#i-chevron-right"/></svg>';
+    html+='<span class="dg-title">'+esc(date)+'</span>';
+    html+='<span class="badge badge-primary">'+rows.length+' 条</span>';
+    html+='</div>';
+    html+='<div class="date-group-body'+(collapsed?' hidden':'')+'"><div class="table-scroll">';
+    html+=renderRow(rows);
+    html+='</div></div></div>';
+  });
+  el.innerHTML=html;
+}
+
+function updateMailStatus(running){
+  document.getElementById('mailStatusRunning').classList.toggle('badge-hidden',!running);
+  document.getElementById('mailStatusStopped').classList.toggle('badge-hidden',running);
+}
+async function loadMailStatus(){
+  try{const d=await apiFetch('/api/mail/status');if(d.status==='success')updateMailStatus(d.running)}catch(e){}
+}
+async function startMail(){
+  showLoading('正在启动...');
+  try{const d=await apiFetch('/api/mail/start',{method:'POST'});if(d.status==='success'){updateMailStatus(d.running);toast(d.running?'已启动轮询':'启动失败')}else{toast('启动失败: '+(d.detail||'未知错误'),'error')}}catch(e){toast('请求出错: '+e.message,'error')}finally{hideLoading()}
+}
+async function stopMail(){
+  showLoading('正在停止...');
+  try{const d=await apiFetch('/api/mail/stop',{method:'POST'});if(d.status==='success'){updateMailStatus(d.running);toast('已停止轮询')}else{toast('停止失败: '+(d.detail||'未知错误'),'error')}}catch(e){toast('请求出错: '+e.message,'error')}finally{hideLoading()}
+}
+async function runMailOnceResults(date){
+  showLoading('正在立即执行，可能需要几十秒...');
+  try{
+    const d=await apiFetch('/api/mail/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date||''})});
+    if(d.status==='success'){toast('执行完成，处理 '+d.handled+' 封邮件');loadMailLogs();loadMailResults();loadMailTasks();}
+    else toast('执行失败: '+(d.detail||'未知错误'),'error');
+  }catch(e){toast('请求出错: '+e.message,'error')}finally{hideLoading()}
+}
+function openRunModal(){
+  const today=new Date().toISOString().split('T')[0];
+  document.getElementById('runDate').value=today;
+  document.getElementById('runModal').classList.add('show');
+}
+function closeRunModal(){
+  document.getElementById('runModal').classList.remove('show');
+}
+function confirmRun(){
+  const date=document.getElementById('runDate').value;
+  closeRunModal();
+  runMailOnceResults(date);
+}
+function downloadMailFile(filename){
+  if(window.pywebview&&window.pywebview.api){
+    window.pywebview.api.download_file(filename).then(r=>{if(!r)toast('已取消下载')}).catch(e=>toast('下载失败','error'));
+  }else{
+    window.location.href='/api/mail/results/'+encodeURIComponent(filename);
+  }
+}
+async function previewResult(encFilename, filename){
+  showLoading('正在加载预览...');
+  try{
+    const d=await apiFetch('/api/mail/results/'+encFilename+'/preview');
+    if(d.status==='success'){
+      document.getElementById('previewFilename').textContent=d.filename||filename;
+      renderPreview(d);
+      document.getElementById('previewModal').classList.add('show');
+    }else toast('预览失败: '+(d.detail||'未知错误'),'error');
+  }catch(e){toast('请求出错','error')}
+  finally{hideLoading()}
+}
+function renderPreview(d){
+  const sheets=d.sheets||[];
+  let tabs='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">';
+  sheets.forEach((s,i)=>{
+    tabs+='<button class="btn '+(i===0?'btn-primary':'btn-ghost')+'" style="padding:4px 12px;font-size:12px" id="ptab-'+i+'" onclick="switchPreviewSheet('+i+')">'+esc(s.sheet_name)+' <span style="opacity:.7">('+s.total_rows+'行)</span></button>';
+  });
+  tabs+='</div>';
+  let bodies='';
+  sheets.forEach((s,i)=>{
+    const headers=s.rows[0]||[];
+    let t='<div id="psheet-'+i+'" style="'+(i===0?'':'display:none')+'">';
+    t+='<div style="max-height:480px;overflow:auto;border:1px solid var(--border-l);border-radius:var(--r-sm)">';
+    t+='<table class="ptbl"><thead><tr>';
+    headers.forEach(h=>t+='<th>'+esc(h)+'</th>');
+    t+='</tr></thead><tbody>';
+    s.rows.slice(1).forEach(row=>{
+      t+='<tr>';
+      row.forEach(c=>t+='<td title="'+esc(c)+'">'+esc(c)+'</td>');
+      t+='</tr>';
+    });
+    t+='</tbody></table></div>';
+    if(s.total_rows>21)t+='<div style="font-size:11px;color:var(--text-4);margin-top:4px">仅预览前 20 行，共 '+s.total_rows+' 行</div>';
+    t+='</div>';
+    bodies+=t;
+  });
+  document.getElementById('previewContent').innerHTML=tabs+bodies;
+}
+function switchPreviewSheet(i){
+  document.querySelectorAll('[id^="psheet-"]').forEach(el=>el.style.display='none');
+  document.getElementById('psheet-'+i).style.display='';
+  document.querySelectorAll('[id^="ptab-"]').forEach(el=>el.className=el.className.replace('btn-primary','btn-ghost'));
+  const tab=document.getElementById('ptab-'+i);
+  if(tab)tab.className=tab.className.replace('btn-ghost','btn-primary');
+}
+function closePreview(){
+  document.getElementById('previewModal').classList.remove('show');
+}
+
+async function loadMailLogs(){
+  try{
+    const d=await apiFetch('/api/mail/logs');
+    if(d.status==='success'){
+      const logs=d.logs||[];
+      const el=document.getElementById('mailLogs');
+      if(el)el.innerHTML=logs.length>0?logs.map(l=>'<div>'+esc(l)+'</div>').join(''):'<div style="color:var(--text-4)">暂无日志</div>';
+    }
+  }catch(e){}
+}
+async function loadMailResults(){
+  try{
+    const d=await apiFetch('/api/mail/results');
+    if(d.status==='success'){
+      const byDate={};
+      (d.files||[]).forEach(f=>{const date=(f.mtime||'').split(' ')[0]||'未知日期';if(!byDate[date])byDate[date]=[];byDate[date].push(f)});
+      renderDateGroups('mailResults',byDate,rows=>{
+        let h='<table class="rtbl"><thead><tr><th>文件名</th><th style="width:70px">时间</th><th style="width:70px">大小</th><th style="width:140px">操作</th></tr></thead><tbody>';
+        rows.forEach(f=>{
+          const enc=encodeURIComponent(f.filename);
+          h+='<tr><td>'+esc(f.filename)+'</td><td style="color:var(--text-4)">'+esc((f.mtime||'').split(' ')[1]||'')+'</td><td style="color:var(--text-4)">'+(f.size/1024).toFixed(1)+'KB</td>'+
+            '<td style="white-space:nowrap">'+
+            '<button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" onclick="previewResult(\''+enc+'\',\''+esc(f.filename).replace(/'/g,"\\'")+'\')">预览</button> '+
+            '<button class="btn btn-ghost" style="padding:3px 10px;font-size:12px" data-filename="'+esc(f.filename)+'" onclick="downloadMailFile(this.dataset.filename)">下载</button>'+
+            '</td></tr>';
+        });
+        return h+'</tbody></table>';
+      });
+    }
+  }catch(e){}
+}
+async function loadMailTasks(){
+  try{
+    const d=await apiFetch('/api/mail/tasks');
+    if(d.status==='success'){
+      const byDate={};
+      (d.tasks||[]).forEach(t=>{
+        const dt=t.time||'';const date=dt.split(' ')[0]||'未知日期';const time=dt.split(' ')[1]||'';
+        (t.mails||[]).forEach(m=>{if(!byDate[date])byDate[date]=[];byDate[date].push({time,subject:m.subject||'',attachments:(m.attachments||[]).join('、'),processed:m.processed})});
+      });
+      renderDateGroups('mailTasks',byDate,rows=>{
+        let h='<table class="rtbl"><thead><tr><th style="width:70px">时间</th><th>邮件主题</th><th>附件</th><th style="width:80px">状态</th></tr></thead><tbody>';
+        rows.forEach(r=>{
+          h+='<tr><td style="color:var(--text-4)">'+esc(r.time)+'</td><td>'+esc(r.subject)+'</td><td style="color:var(--text-4)">'+esc(r.attachments)+'</td>'+
+            '<td><span class="badge '+(r.processed?'badge-accent':'badge-amber')+'">'+(r.processed?'已处理':'跳过')+'</span></td></tr>';
+        });
+        return h+'</tbody></table>';
+      });
+    }
+  }catch(e){}
+}
+
+// Hash-based routing: open the correct panel on load
+function handleHashRoute(){
+  var hash=window.location.hash.replace('#','');
+  if(hash==='mail'){showStep('mail');}
+  else if(hash==='results'){showStep('results');}
+  else if(hash==='rules'){openRuleManager();}
+}
+
 // Load user info on page load
 loadUserInfo();
 loadVersion();
+handleHashRoute();
 
 </script>
 </body>

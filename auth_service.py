@@ -184,10 +184,13 @@ ADMIN_SESSIONS: Dict[str, dict] = {}
 
 ADMIN_COOKIE = "lx_admin_session"
 
-# 用户单设备登录：username → {"token": str, "login_time": float}
-# 登录时记录，第二次登录直接拒绝（不覆盖旧设备）
-# 用户退出时清除，超时后自动释放
-DEVICE_LOGIN_TIMEOUT = 86400  # 24 小时后自动释放绑定
+# 用户单设备登录：username → {"token": str, "login_time": float, "device_id": str}
+# 登录时检查是否已有活跃会话：
+#   - 如果旧会话超过 DEVICE_LOGIN_TIMEOUT 自动释放，允许新登录
+#   - 如果旧会话仍在有效期内，且是同一设备再次登录，允许（替换旧会话）
+#   - 如果旧会话仍在有效期内，且是不同设备登录，拒绝（防止多设备同时使用）
+# 用户退出时清除绑定，超时后自动释放
+DEVICE_LOGIN_TIMEOUT = 1800  # 30 分钟后自动释放绑定
 ACTIVE_LOGINS: Dict[str, dict] = {}
 
 
@@ -415,22 +418,29 @@ async def login(request: Request):
         return JSONResponse({"status": "error", "detail": "该账号已被禁用"}, status_code=403)
 
     # 单设备登录：检查是否已在其他设备登录
+    device_id = body.get("device_id", "").strip()
     existing = ACTIVE_LOGINS.get(user["username"])
     if existing:
         elapsed = time.time() - existing.get("login_time", 0)
         if elapsed < DEVICE_LOGIN_TIMEOUT:
-            return JSONResponse({
-                "status": "error",
-                "detail": "该账号已在其他设备登录，请先在该设备退出登录，或联系管理员解绑",
-            }, status_code=409)
-        # 超时自动释放
-        del ACTIVE_LOGINS[user["username"]]
+            # 同一设备再次登录：允许（替换旧会话）
+            if device_id and existing.get("device_id") == device_id:
+                pass  # 继续走下面的登录流程，替换旧会话
+            else:
+                return JSONResponse({
+                    "status": "error",
+                    "detail": "该账号已在其他设备登录，请先在该设备退出登录，或联系管理员解绑",
+                }, status_code=409)
+        else:
+            # 超时自动释放
+            del ACTIVE_LOGINS[user["username"]]
 
     # 生成登录令牌，绑定当前设备
     login_token = secrets.token_hex(16)
     ACTIVE_LOGINS[user["username"]] = {
         "token": login_token,
         "login_time": time.time(),
+        "device_id": device_id,
     }
 
     return JSONResponse({
@@ -512,6 +522,20 @@ async def service_logout(request: Request):
     username = body.get("username", "").strip()
     if username and username in ACTIVE_LOGINS:
         del ACTIVE_LOGINS[username]
+    return JSONResponse({"status": "success"})
+
+
+@app.post("/heartbeat")
+async def heartbeat(request: Request):
+    """供主应用定期调用的心跳接口，刷新设备绑定的活跃时间。
+    接收 {username}，需要服务间通信密钥。"""
+    if not verify_service_token(request):
+        return JSONResponse({"status": "error", "detail": "未授权"}, status_code=401)
+
+    body = await request.json()
+    username = body.get("username", "").strip()
+    if username and username in ACTIVE_LOGINS:
+        ACTIVE_LOGINS[username]["login_time"] = time.time()
     return JSONResponse({"status": "success"})
 
 

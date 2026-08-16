@@ -11,7 +11,7 @@
 body{
   font-family:var(--font-body);background:var(--bg);color:var(--text);
   min-height:100vh;display:flex;align-items:center;justify-content:center;
-  -webkit-font-smoothing:antialiased;overflow:hidden;
+  -webkit-font-smoothing:antialiased;overflow-y:auto;overflow-x:hidden;
 }
 
 /* ---- Floating blossom orbs ---- */
@@ -179,15 +179,21 @@ async function doLogin(e){
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({username:username,password:password}),
     });
-    var data=await resp.json();
-    if(data.status==='success'){
+    var data;
+    try{data=await resp.json()}catch(e){data=null}
+    if(data&&data.status==='success'){
+      btn.disabled=true;
       window.location.href='/';
-    }else{
-      document.getElementById('errText').textContent=data.detail||'登录失败';
-      errEl.classList.add('show');
+      return false;
     }
+    var msg=data&&data.detail?data.detail:'登录失败';
+    if(resp.status===409){
+      msg='该账号已在其他设备登录。如在同一台电脑，请稍等片刻后重试；如换设备，请先在原设备退出登录。';
+    }
+    document.getElementById('errText').textContent=msg;
+    errEl.classList.add('show');
   }catch(err){
-    document.getElementById('errText').textContent='网络错误，请重试';
+    document.getElementById('errText').textContent='网络错误，请检查网络后重试';
     errEl.classList.add('show');
   }finally{
     btn.classList.remove('loading');
