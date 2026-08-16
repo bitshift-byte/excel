@@ -116,7 +116,7 @@ def _load_auth_service_url() -> str:
     except Exception:
         pass
     # 3. 默认值
-    return "http://127.0.0.1:8001"
+    return "http://18.177.82.156:8001"
 
 
 AUTH_SERVICE_URL = _load_auth_service_url()
