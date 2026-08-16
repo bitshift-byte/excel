@@ -1,0 +1,16 @@
+# 认证服务 Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir fastapi uvicorn[standard] httpx
+
+COPY auth_service.py .
+COPY auth_config.example.json .
+COPY templates/ ./templates/
+COPY data/ ./data/
+
+EXPOSE 8001
+
+CMD ["uvicorn", "auth_service:app", "--host", "0.0.0.0", "--port", "8001"]

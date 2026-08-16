@@ -1,9 +1,15 @@
-name: Build Windows EXE
+name: Build & Release Windows EXE
 
 on:
   push:
-    branches: [main]
+    tags:
+      - "v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（如 v1.0.1）"
+        required: true
+        default: "v1.0.1"
 
 permissions:
   contents: write
@@ -15,6 +21,16 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
+      - name: 确定版本号
+        id: ver
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
       - name: 安装 Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -24,11 +40,22 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pywebview pyinstaller
+          pip install pyinstaller
 
+      - name: 更新版本号
+        shell: python
+        run: |
+          import re
+          tag = "${{ steps.ver.outputs.tag }}"
+          with open("updater.py", "r", encoding="utf-8") as f:
+              t = f.read()
+          t = re.sub(r'APP_VERSION = "v[^"]*"', f'APP_VERSION = "{tag}"', t)
+          with open("updater.py", "w", encoding="utf-8") as f:
+              f.write(t)
+          print(f"Version set to: {tag}")
       - name: PyInstaller 打包
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name LX --icon icon.ico --collect-all webview --add-data "china_regions.json;." --add-data "templates;templates" app.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name LX --icon icon.ico --collect-all webview --hidden-import updater --add-data "china_regions.json;." --add-data "templates;templates" --add-data "auth_config.example.json;." app.py
 
       - name: 重命名 exe
         run: |
@@ -41,24 +68,22 @@ jobs:
           path: dist/LX捞数据.exe
           retention-days: 30
 
-      - name: 删除旧 Release 和 Tag
-        run: |
-          gh release delete latest --yes 2>$null
-          git push origin --delete latest 2>$null
-          exit 0
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 发布到 Release
+      - name: 发布到 GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: dist/LX捞数据.exe
-          tag_name: latest
-          name: LX捞数据
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.tag }}
           body: |
-            LX捞数据 Windows 单文件版。
-            双击运行后弹出桌面窗口（http://127.0.0.1:8000）。
-            首次登录账号 admin / admin123，登录后绑定 IP。
+            ## LX捞数据 ${{ steps.ver.outputs.tag }}
+
+            ### 下载使用
+            1. 下载 `LX捞数据.exe`
+            2. 双击运行，弹出桌面窗口
+            3. 默认账号：admin / admin123
+
+            ### 自动升级
+            已安装的旧版本可在应用内点击右下角刷新图标自动检查并升级。
           draft: false
           prerelease: false
         env:

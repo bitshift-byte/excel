@@ -1,32 +1,22 @@
-services:
-  # 后端：FastAPI 应用（同时服务 API 与前端 HTML 模板）
-  excel-merger:
-    build: .
-    container_name: excel-merger
-    restart: unless-stopped
-    environment:
-      - TZ=Asia/Shanghai
-      - PYTHONUNBUFFERED=1
-    volumes:
-      # 上传文件持久化
-      - ./uploads:/app/uploads
-      # 输出文件持久化
-      - ./output:/app/output
-      # 用户自定义规则持久化
-      - ./rules.json:/app/rules.json
-      # 运行时数据目录（邮件配置 + 去重记录）
-      - ./data:/app/data
-    expose:
-      - "8000"            # 仅对 nginx 可见，不对外暴露
+version: "3.8"
 
-  # 前端入口：Nginx 反向代理（域名/HTTPS/上传限流统一在这里）
-  nginx:
-    image: nginx:alpine
-    container_name: excel-merger-nginx
+services:
+  auth-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.auth
+    container_name: lx-auth-service
     restart: unless-stopped
-    depends_on:
-      - excel-merger
     ports:
-      - "8888:80"
+      - "8001:8001"
     volumes:
-      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./data:/app/data
+    environment:
+      - AUTH_CONFIG_PATH=/app/data/auth_config.json
+      - AUTH_CORS_ORIGINS=*
+      - PASSWORD_SALT=excel-merger-salt
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

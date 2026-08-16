@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LX捞数据</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -71,7 +71,12 @@
         </button>
       </div>
       <div class="status"><span class="dot"></span>服务运行中</div>
-      <div>v1.0 · Powered by FastAPI</div>
+      <div id="versionInfo" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-4)">
+        <span id="versionText">v1.0.0</span>
+        <button id="checkUpdateBtn" onclick="checkUpdate()" style="background:none;border:none;color:var(--text-4);cursor:pointer;font-size:11px;padding:2px 4px" title="检查更新">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </button>
+      </div>
     </div>
   </aside>
 
@@ -1021,8 +1026,46 @@ async function doLogout(){
   }catch(e){}
   window.location.href='/login';
 }
+// ==================== Auto Update ====================
+async function checkUpdate(){
+  var btn=document.getElementById('checkUpdateBtn');
+  btn.style.opacity='0.5';
+  btn.disabled=true;
+  try{
+    var result=await window.pywebview.api.check_update();
+    if(result&&result.has_update){
+      var msg='发现新版本 '+result.latest+'！\n\n'+(result.body||'')+'\n\n是否立即下载升级？下载完成后将在下次启动时自动应用。';
+      if(confirm(msg)){
+        var dlResult=await window.pywebview.api.do_update();
+        if(dlResult&&dlResult.error){
+          toast('下载失败: '+dlResult.error,'error');
+        }else{
+          toast('新版本已下载，将在下次启动时自动升级');
+        }
+      }
+    }else if(result&&result.error){
+      toast('检查更新失败: '+result.error,'error');
+    }else{
+      toast('当前已是最新版本');
+    }
+  }catch(e){
+    toast('检查更新失败','error');
+  }finally{
+    btn.style.opacity='';
+    btn.disabled=false;
+  }
+}
+
+async function loadVersion(){
+  try{
+    var v=await window.pywebview.api.get_version();
+    if(v)document.getElementById('versionText').textContent=v;
+  }catch(e){}
+}
+
 // Load user info on page load
 loadUserInfo();
+loadVersion();
 
 </script>
 </body>

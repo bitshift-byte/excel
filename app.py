@@ -1,15 +1,15 @@
 """
 联合利华 Excel 合并筛选系统
-- 登录认证（session token）
+- 登录认证（用户名 + 密码，走认证服务）
 - 第一步：上传文件，分析所有 Sheet 表头 + 前10行数据
 - 第二步：用户纠正表头列名 + 选择参与合并的 Sheet + 选择筛选省份
 - 第三步：按列名对齐合并，筛选选中省份的数据，输出 Excel + 预览
 """
 
 import os
+import sys
 import json
 import uuid
-import hashlib
 import datetime
 import secrets
 import asyncio
@@ -69,57 +69,58 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
 
-# ===================== 认证 =====================
 
-# 用户数据库（持久化到 data/users.json，含 IP 绑定）
-USERS_FILE = os.path.join(DATA_DIR, "users.json")
+# ===================== 认证（用户名 + 密码，通过远程认证服务） =====================
 
-PASSWORD_SALT = "excel-merger-salt"
-
-
-def hash_password(pw: str) -> str:
-    return hashlib.sha256((PASSWORD_SALT + pw).encode()).hexdigest()
-
-
-DEFAULT_USERS = [
-    {"username": "admin", "password": hash_password("admin123"), "name": "管理员", "role": "admin", "ip": ""},
-    {"username": "user1", "password": hash_password("user123"), "name": "用户一", "role": "user", "ip": ""},
-    {"username": "user2", "password": hash_password("user123"), "name": "用户二", "role": "user", "ip": ""},
-]
-
-
-def load_users() -> dict:
-    if not os.path.exists(USERS_FILE):
-        users = {u["username"]: dict(u) for u in DEFAULT_USERS}
-        save_users(users)
-        return users
+def _load_auth_service_url() -> str:
+    """
+    读取认证服务地址。
+    优先级：环境变量 > data/auth_service_url.txt > 默认值
+    桌面应用通过编辑 data/auth_service_url.txt 配置服务器地址。
+    """
+    # 1. 环境变量
+    url = os.environ.get("AUTH_SERVICE_URL")
+    if url:
+        return url.rstrip("/")
+    # 2. 配置文件
+    url_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "auth_service_url.txt")
+    if getattr(sys, "frozen", False):
+        if os.name == "nt":
+            appdata = os.environ.get("APPDATA")
+            base = os.path.join(appdata, "ExcelMerger") if appdata else os.path.dirname(sys.executable)
+        else:
+            base = os.path.dirname(sys.executable)
+        url_file = os.path.join(base, "data", "auth_service_url.txt")
     try:
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        users = {}
-        for u in data:
-            pw = u.get("password", "")
-            if len(pw) != 64 or not all(c in "0123456789abcdef" for c in pw):
-                u["password"] = hash_password(pw)
-            users[u["username"]] = u
-        return users
-    except (json.JSONDecodeError, IOError):
-        return {u["username"]: dict(u) for u in DEFAULT_USERS}
+        if os.path.exists(url_file):
+            with open(url_file, "r", encoding="utf-8") as f:
+                url = f.read().strip()
+                if url:
+                    return url.rstrip("/")
+    except Exception:
+        pass
+    # 3. 默认值
+    return "http://127.0.0.1:8001"
 
 
-def save_users(users: dict) -> None:
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(list(users.values()), f, ensure_ascii=False, indent=2)
+AUTH_SERVICE_URL = _load_auth_service_url()
 
 
-def get_client_ip(request: Request) -> str:
-    xff = request.headers.get("X-Forwarded-For")
-    if xff:
-        return xff.split(",")[0].strip()
-    return request.client.host if request.client else ""
+def load_users_from_auth_service() -> dict:
+    """从远程认证服务加载用户列表（供 get_current_user 查询）"""
+    import httpx
+    try:
+        resp = httpx.get(f"{AUTH_SERVICE_URL}/users", timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            return {u["username"]: u for u in data.get("users", [])}
+    except Exception as e:
+        print(f"[auth] 无法连接认证服务 ({AUTH_SERVICE_URL}): {e}")
+    # 认证服务不可用时返回空字典
+    return {}
 
 
-USERS = load_users()
+USERS = load_users_from_auth_service()
 
 # session token → username 映射（内存存储，重启失效）
 SESSIONS: Dict[str, str] = {}
@@ -161,13 +162,8 @@ def get_current_user(request: Request) -> Optional[dict]:
         username = SESSIONS[token]
         user_info = USERS.get(username)
         if user_info:
-            return {"username": username, "name": user_info["name"], "role": user_info["role"]}
+            return {"username": username, "name": user_info.get("name", username), "role": user_info.get("role", "user")}
     return None
-
-
-
-
-
 
 
 # ===================== 路由 =====================
@@ -180,30 +176,37 @@ async def login_page():
 
 @app.post("/api/login")
 async def login_api(request: Request):
+    """用户名 + 密码登录：调用认证服务校验"""
+    import httpx
     body = await request.json()
     username = body.get("username", "").strip()
     password = body.get("password", "").strip()
-
-    user = USERS.get(username)
-    if not user or user["password"] != hash_password(password):
-        return JSONResponse({"status": "error", "detail": "用户名或密码错误"}, status_code=401)
-
-    client_ip = get_client_ip(request)
-    bound_ip = user.get("ip", "")
-    if bound_ip:
-        if client_ip != bound_ip:
-            return JSONResponse(
-                {"status": "error", "detail": f"该账号已绑定 IP {bound_ip}，当前登录 IP {client_ip} 不允许"},
-                status_code=403,
+    if not username or not password:
+        return JSONResponse({"status": "error", "detail": "用户名和密码不能为空"}, status_code=400)
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{AUTH_SERVICE_URL}/login",
+                json={"username": username, "password": password},
+                timeout=15,
             )
-    else:
-        user["ip"] = client_ip
-        save_users(USERS)
+    except httpx.ConnectError:
+        return JSONResponse({"status": "error", "detail": "认证服务不可用"}, status_code=503)
+
+    data = resp.json()
+    if resp.status_code != 200 or data.get("status") != "success":
+        return JSONResponse(content=data, status_code=resp.status_code)
+
+    user_info = data["user"]
+
+    # 刷新用户表
+    global USERS
+    USERS = load_users_from_auth_service()
 
     token = secrets.token_hex(16)
-    SESSIONS[token] = username
+    SESSIONS[token] = user_info["username"]
 
-    resp = JSONResponse({"status": "success", "user": {"username": username, "name": user["name"], "role": user["role"]}})
+    resp = JSONResponse({"status": "success", "user": {"username": user_info["username"], "name": user_info["name"], "role": user_info["role"]}})
     resp.set_cookie(
         SESSION_COOKIE, token,
         max_age=SESSION_MAX_AGE,
@@ -237,23 +240,10 @@ async def list_users(request: Request):
     if not user or user["role"] != "admin":
         raise HTTPException(status_code=403, detail="仅管理员可查看")
     users = [
-        {"username": u["username"], "name": u["name"], "role": u["role"], "ip": u.get("ip", "")}
+        {"username": u.get("username", ""), "name": u.get("name", ""), "role": u.get("role", "user")}
         for u in USERS.values()
     ]
     return JSONResponse(content={"status": "success", "users": users})
-
-
-@app.post("/api/users/{username}/reset-ip")
-async def reset_user_ip(username: str, request: Request):
-    user = get_current_user(request)
-    if not user or user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="仅管理员可操作")
-    target = USERS.get(username)
-    if not target:
-        raise HTTPException(status_code=404, detail="账号不存在")
-    target["ip"] = ""
-    save_users(USERS)
-    return JSONResponse(content={"status": "success"})
 
 
 # ===================== 规则 CRUD =====================
@@ -657,55 +647,88 @@ async def mail_tasks():
 if __name__ == "__main__":
     import sys
     import uvicorn
+    import threading
+    import time
+
+    # ── 无感升级：启动时应用待更新的版本（仅打包后生效）──
+    import updater
+    updater.apply_pending_update()
+
     port = 8000
-    if getattr(sys, "frozen", False):
-        # 桌面窗口模式（PyInstaller 打包后双击运行）
-        import threading
-        import webview
 
-        class Api:
-            def _save(self, src, save_filename):
-                import os
-                import shutil
-                if not os.path.isfile(src):
-                    return None
-                dest = webview.windows[0].create_file_dialog(
-                    webview.FileDialog.SAVE,
-                    directory=os.path.expanduser("~"),
-                    save_filename=save_filename,
-                )
-                if not dest:
-                    return None
-                if isinstance(dest, (tuple, list)):
-                    dest = dest[0]
-                shutil.copy(src, dest)
-                return dest
+    print(f"[auth] 认证服务地址: {AUTH_SERVICE_URL}")
 
-            def download_file(self, filename):
-                import os
-                safe = os.path.basename(filename)
-                return self._save(os.path.join(OUTPUT_DIR, safe), safe)
+    # 桌面窗口模式（开发时直接运行、打包后双击运行都走这里）
+    import webview
 
-            def download_latest(self):
-                import os
-                files = [f for f in os.listdir(OUTPUT_DIR) if f.endswith(".xlsx")]
-                if not files:
-                    return None
-                files.sort(key=lambda f: os.path.getmtime(os.path.join(OUTPUT_DIR, f)), reverse=True)
-                return self._save(os.path.join(OUTPUT_DIR, files[0]), files[0])
+    # ── 无感升级：后台静默检查并下载新版本（3 秒后执行）──
+    def _silent_update_check():
+        time.sleep(3)
+        try:
+            updater.check_and_download_update()
+        except Exception as e:
+            print(f"[updater] 静默检查失败: {e}")
 
-        def _run_server():
-            uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    threading.Thread(target=_silent_update_check, daemon=True).start()
 
-        threading.Thread(target=_run_server, daemon=True).start()
-        webview.create_window(
-            "LX捞数据",
-            f"http://127.0.0.1:{port}",
-            width=1280,
-            height=820,
-            min_size=(900, 600),
-            js_api=Api(),
-        )
-        webview.start()
-    else:
-        uvicorn.run(app, host="0.0.0.0", port=port)
+    class Api:
+        def _save(self, src, save_filename):
+            import os
+            import shutil
+            if not os.path.isfile(src):
+                return None
+            dest = webview.windows[0].create_file_dialog(
+                webview.FileDialog.SAVE,
+                directory=os.path.expanduser("~"),
+                save_filename=save_filename,
+            )
+            if not dest:
+                return None
+            if isinstance(dest, (tuple, list)):
+                dest = dest[0]
+            shutil.copy(src, dest)
+            return dest
+
+        def download_file(self, filename):
+            import os
+            safe = os.path.basename(filename)
+            return self._save(os.path.join(OUTPUT_DIR, safe), safe)
+
+        def download_latest(self):
+            import os
+            files = [f for f in os.listdir(OUTPUT_DIR) if f.endswith(".xlsx")]
+            if not files:
+                return None
+            files.sort(key=lambda f: os.path.getmtime(os.path.join(OUTPUT_DIR, f)), reverse=True)
+            return self._save(os.path.join(OUTPUT_DIR, files[0]), files[0])
+
+        def check_update(self):
+            """检查是否有新版本（不自动升级，仅返回信息）"""
+            import updater
+            return updater.check_and_update(auto=False)
+
+        def do_update(self):
+            """执行自动升级"""
+            import updater
+            return updater.check_and_update(auto=True)
+
+        def get_version(self):
+            """返回当前版本号"""
+            import updater
+            return updater.get_current_version()
+
+    # 启动主应用服务
+    def _run_server():
+        uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+
+    threading.Thread(target=_run_server, daemon=True).start()
+
+    webview.create_window(
+        "LX捞数据",
+        f"http://127.0.0.1:{port}",
+        width=1280,
+        height=820,
+        min_size=(900, 600),
+        js_api=Api(),
+    )
+    webview.start()

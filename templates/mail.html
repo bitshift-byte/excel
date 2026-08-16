@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>邮件设置 - LX捞数据</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/style.css">
 <style>
 .mail-wrap{max-width:960px;margin:0 auto;padding:24px}
@@ -88,7 +88,7 @@
         <div class="card-head">
           <div class="ch-icon"><svg><use href="#i-mail"/></svg></div>
           <span class="ch-title">账号管理</span>
-          <span class="ch-sub">IP 绑定状态（仅管理员可见）</span>
+          <span class="ch-sub">用户列表（仅管理员可见）</span>
           <div class="ch-spacer"></div>
           <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" onclick="loadUsers()">刷新</button>
         </div>
@@ -178,21 +178,11 @@ async function loadUsers(){
         return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-l)">'+
           '<div style="flex:1;min-width:0">'+
           '<div style="font-size:13px;color:var(--text-2);font-weight:600">'+esc(u.name)+'（'+esc(u.username)+'）</div>'+
-          '<div style="font-size:11px;color:var(--text-4)">'+(u.role==='admin'?'管理员':'用户')+' · IP: '+(u.ip?esc(u.ip):'未绑定')+'</div></div>'+
-          (u.ip?'<button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="resetIp(\''+esc(u.username)+'\')">重置 IP</button>':'')+
+          '<div style="font-size:11px;color:var(--text-4)">'+(u.role==='admin'?'管理员':'用户')+'</div></div>'+
           '</div>';
       }).join('');
     }
   }catch(e){}
-}
-async function resetIp(username){
-  if(!confirm('确定重置 '+username+' 的 IP 绑定？重置后下次登录重新绑定。'))return;
-  try{
-    const resp=await fetch('/api/users/'+encodeURIComponent(username)+'/reset-ip',{method:'POST'});
-    const data=await resp.json();
-    if(data.status==='success'){toast('已重置 IP');loadUsers()}
-    else{toast('重置失败: '+(data.detail||'未知错误'),'error')}
-  }catch(e){toast('请求出错','error')}
 }
 async function loadUserInfo(){
   try{
