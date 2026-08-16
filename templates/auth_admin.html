@@ -467,11 +467,22 @@ tbody tr:last-child td{border-bottom:none}
             <div style="font-size:13px;color:var(--text-4);font-family:var(--font-display)">当前发布版本</div>
             <div id="updVersion" style="font-size:24px;font-weight:800;color:var(--primary-d);font-family:var(--font-display)">—</div>
             <div id="updNotes" style="font-size:13px;color:var(--text-3);margin-top:6px;max-width:500px;white-space:pre-wrap">—</div>
-            <div id="updMeta" style="font-size:12px;color:var(--text-4);margin-top:6px"></div>
           </div>
           <div style="display:flex;gap:8px">
             <button class="btn btn-sm" onclick="loadUpdateInfo()">刷新</button>
             <button class="btn btn-sm btn-danger" onclick="clearVersion()">清除版本</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px;background:var(--bg);border-radius:var(--r-md);padding:12px;border:1px solid var(--border)">
+            <div style="font-size:12px;font-weight:700;color:var(--text-3);margin-bottom:6px">🪟 Windows</div>
+            <div id="updWinFile" style="font-size:13px;color:var(--text-2)">—</div>
+            <div id="updWinMeta" style="font-size:11px;color:var(--text-4);margin-top:4px"></div>
+          </div>
+          <div style="flex:1;min-width:200px;background:var(--bg);border-radius:var(--r-md);padding:12px;border:1px solid var(--border)">
+            <div style="font-size:12px;font-weight:700;color:var(--text-3);margin-bottom:6px">🍎 macOS</div>
+            <div id="updMacFile" style="font-size:13px;color:var(--text-2)">—</div>
+            <div id="updMacMeta" style="font-size:11px;color:var(--text-4);margin-top:4px"></div>
           </div>
         </div>
       </div>
@@ -486,13 +497,20 @@ tbody tr:last-child td{border-bottom:none}
           <textarea id="updInputNotes" rows="3" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-md);font-size:13px;resize:vertical" placeholder="本次更新内容..."></textarea>
         </div>
         <div class="modal-field">
-          <label>选择 exe 文件</label>
+          <label>目标平台</label>
+          <select id="updInputPlatform" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-md);font-size:13px;background:var(--card-bg)">
+            <option value="windows">Windows (.exe)</option>
+            <option value="macos">macOS (.zip)</option>
+          </select>
+        </div>
+        <div class="modal-field">
+          <label>选择安装包文件</label>
           <div class="upload-dropzone" id="uploadDropzone" onclick="document.getElementById('updInputFile').click()">
             <svg style="width:24px;height:24px;color:var(--text-4)"><use href="#i-upload"/></svg>
-            <div class="dz-text" id="dzText">点击选择 .exe 文件</div>
+            <div class="dz-text" id="dzText">点击选择 .exe 或 .zip 文件</div>
             <div class="dz-hint">最大 200MB</div>
           </div>
-          <input type="file" id="updInputFile" accept=".exe" style="display:none" onchange="onFileSelected(this)">
+          <input type="file" id="updInputFile" accept=".exe,.zip" style="display:none" onchange="onFileSelected(this)">
         </div>
         <button class="btn btn-primary" onclick="uploadExe()" id="uploadBtn" style="margin-top:8px">
           <svg><use href="#i-upload"/></svg> 上传
@@ -1276,14 +1294,22 @@ async function loadUpdateInfo(){
     var resp=await fetch('/admin/api/update-info');
     if(resp.status!==200){document.getElementById('updVersion').textContent='加载失败';return}
     var data=await resp.json();
-    var info=data.current||{};
-    document.getElementById('updVersion').textContent=info.version||'未设置';
-    document.getElementById('updNotes').textContent=info.notes||'—';
-    var meta='';
-    if(info.uploaded_at)meta+='上传时间: '+info.uploaded_at;
-    if(info.size)meta+=(meta?' · ':'')+'大小: '+(info.size/1024/1024).toFixed(1)+' MB';
-    if(info.filename)meta+=(meta?' · ':'')+'文件: '+info.filename;
-    document.getElementById('updMeta').textContent=meta;
+    document.getElementById('updVersion').textContent=data.version||'未设置';
+    document.getElementById('updNotes').textContent=data.notes||'—';
+    // Windows info
+    var win=data.windows||{};
+    document.getElementById('updWinFile').textContent=win.filename||'未上传';
+    var winMeta='';
+    if(win.uploaded_at)winMeta+=win.uploaded_at;
+    if(win.size)winMeta+=(winMeta?' · ':'')+(win.size/1024/1024).toFixed(1)+' MB';
+    document.getElementById('updWinMeta').textContent=winMeta;
+    // macOS info
+    var mac=data.macos||{};
+    document.getElementById('updMacFile').textContent=mac.filename||'未上传';
+    var macMeta='';
+    if(mac.uploaded_at)macMeta+=mac.uploaded_at;
+    if(mac.size)macMeta+=(macMeta?' · ':'')+(mac.size/1024/1024).toFixed(1)+' MB';
+    document.getElementById('updMacMeta').textContent=macMeta;
     // Render file list
     var fl=document.getElementById('updFileList');
     var files=data.files||[];
@@ -1329,7 +1355,7 @@ async function uploadExe(){
   var notes=document.getElementById('updInputNotes').value.trim();
   var fileInput=document.getElementById('updInputFile');
   if(!version){toast('请输入版本号','error');return}
-  if(!fileInput.files.length){toast('请选择exe文件','error');return}
+  if(!fileInput.files.length){toast('请选择安装包文件','error');return}
   var file=fileInput.files[0];
   if(file.size<1000000){toast('文件过小，可能不是有效安装包','error');return}
   if(file.size>200*1024*1024){toast('文件超过200MB限制','error');return}
@@ -1339,9 +1365,11 @@ async function uploadExe(){
   document.getElementById('uploadProgress').style.display='block';
 
   var formData=new FormData();
+  var platform=document.getElementById('updInputPlatform').value;
   formData.append('file',file);
   formData.append('version',version);
   formData.append('notes',notes);
+  formData.append('platform',platform);
 
   try{
     var xhr=new XMLHttpRequest();

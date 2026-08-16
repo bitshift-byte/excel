@@ -959,6 +959,18 @@ async def admin_delete_rule(rule_id: str, admin: dict = Depends(require_admin)):
 
 # ===================== 软件升级管理 =====================
 
+# 版本信息结构（支持多平台）:
+# {
+#   "version": "v1.2.0",
+#   "notes": "更新说明",
+#   "platforms": {
+#     "windows": {"filename": "xxx.exe", "size": 12345, "uploaded_at": "2024-01-01 12:00:00"},
+#     "macos":   {"filename": "xxx.zip", "size": 12345, "uploaded_at": "2024-01-01 12:00:00"}
+#   }
+# }
+# 向后兼容：如果没有 platforms 键，按旧格式解析（filename 视为 windows）。
+
+
 def _load_version_info() -> dict:
     """读取当前版本信息"""
     try:
@@ -967,7 +979,7 @@ def _load_version_info() -> dict:
                 return json.load(f)
     except Exception:
         pass
-    return {"version": "", "filename": "", "notes": "", "uploaded_at": "", "size": 0}
+    return {"version": "", "notes": "", "platforms": {}}
 
 
 def _save_version_info(info: dict):
@@ -975,31 +987,58 @@ def _save_version_info(info: dict):
         json.dump(info, f, ensure_ascii=False, indent=2)
 
 
+def _get_platform_file(info: dict, platform: str) -> dict:
+    """从版本信息中取出指定平台的文件信息。
+    向后兼容旧格式（无 platforms 键时，filename 视为 windows）。"""
+    if "platforms" in info:
+        return info["platforms"].get(platform, {})
+    # 旧格式兼容
+    if platform == "windows":
+        return {
+            "filename": info.get("filename", ""),
+            "size": info.get("size", 0),
+            "uploaded_at": info.get("uploaded_at", ""),
+        }
+    return {}
+
+
 @app.get("/update/check")
 async def update_check(request: Request):
     """供桌面应用检查更新（需服务密钥）。
-    返回当前最新版本信息。"""
+    查询参数 platform=windows|macos，返回对应平台的版本信息。"""
     if not verify_service_token(request):
         return JSONResponse({"status": "error", "detail": "未授权"}, status_code=401)
+    platform = request.query_params.get("platform", "windows")
+    if platform not in ("windows", "macos"):
+        platform = "windows"
     info = _load_version_info()
+    pf = _get_platform_file(info, platform)
+    filename = pf.get("filename", "")
+    has_file = bool(filename and os.path.exists(os.path.join(UPLOAD_DIR, filename)))
     return JSONResponse({
         "status": "success",
         "version": info.get("version", ""),
-        "filename": info.get("filename", ""),
+        "filename": filename,
         "notes": info.get("notes", ""),
-        "uploaded_at": info.get("uploaded_at", ""),
-        "size": info.get("size", 0),
-        "has_file": bool(info.get("filename") and os.path.exists(os.path.join(UPLOAD_DIR, info["filename"]))),
+        "uploaded_at": pf.get("uploaded_at", ""),
+        "size": pf.get("size", 0),
+        "platform": platform,
+        "has_file": has_file,
     })
 
 
 @app.get("/update/download")
 async def update_download(request: Request):
-    """供桌面应用下载更新文件（需服务密钥）"""
+    """供桌面应用下载更新文件（需服务密钥）。
+    查询参数 platform=windows|macos。"""
     if not verify_service_token(request):
         return JSONResponse({"status": "error", "detail": "未授权"}, status_code=401)
+    platform = request.query_params.get("platform", "windows")
+    if platform not in ("windows", "macos"):
+        platform = "windows"
     info = _load_version_info()
-    filename = info.get("filename", "")
+    pf = _get_platform_file(info, platform)
+    filename = pf.get("filename", "")
     if not filename:
         return JSONResponse({"status": "error", "detail": "暂无可用的更新文件"}, status_code=404)
     file_path = os.path.join(UPLOAD_DIR, filename)
@@ -1026,9 +1065,15 @@ async def admin_get_update_info(admin: dict = Depends(require_admin)):
                 "size": os.path.getsize(fp),
                 "modified": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(fp))),
             })
+    # 组装各平台信息（兼容旧格式）
+    win_info = _get_platform_file(info, "windows")
+    mac_info = _get_platform_file(info, "macos")
     return JSONResponse({
         "status": "success",
-        "current": info,
+        "version": info.get("version", ""),
+        "notes": info.get("notes", ""),
+        "windows": win_info,
+        "macos": mac_info,
         "files": files,
     })
 
@@ -1038,46 +1083,57 @@ async def admin_upload_exe(
     admin: dict = Depends(require_admin),
     version: str = Form(""),
     notes: str = Form(""),
+    platform: str = Form("windows"),
     file: UploadFile = File(...),
 ):
-    """管理员上传新版本 exe"""
+    """管理员上传新版本安装包（支持 Windows .exe 和 macOS .zip）"""
     if not version:
         return JSONResponse({"status": "error", "detail": "版本号不能为空"}, status_code=400)
-    
+    if platform not in ("windows", "macos"):
+        platform = "windows"
+
     # 安全检查文件名
-    safe_name = os.path.basename(file.filename or "update.exe")
-    if not safe_name.endswith(".exe"):
-        safe_name += ".exe"
-    
+    safe_name = os.path.basename(file.filename or "update")
+    # 根据平台验证扩展名
+    if platform == "windows":
+        if not safe_name.lower().endswith(".exe"):
+            safe_name += ".exe"
+    else:  # macos
+        if not safe_name.lower().endswith(".zip"):
+            safe_name += ".zip"
+
     # 限制文件大小 200MB
     contents = await file.read()
     if len(contents) > 200 * 1024 * 1024:
         return JSONResponse({"status": "error", "detail": "文件大小超过 200MB 限制"}, status_code=400)
     if len(contents) < 1_000_000:
         return JSONResponse({"status": "error", "detail": "文件过小，可能不是有效的安装包"}, status_code=400)
-    
+
     # 保存文件
     file_path = os.path.join(UPLOAD_DIR, safe_name)
     with open(file_path, "wb") as f:
         f.write(contents)
-    
-    # 保存版本信息
-    info = {
-        "version": version,
+
+    # 更新版本信息
+    info = _load_version_info()
+    info["version"] = version
+    info["notes"] = notes
+    if "platforms" not in info:
+        info["platforms"] = {}
+    info["platforms"][platform] = {
         "filename": safe_name,
-        "notes": notes,
-        "uploaded_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "size": len(contents),
+        "uploaded_at": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
     _save_version_info(info)
-    
+
     return JSONResponse({"status": "success", "info": info})
 
 
 @app.delete("/admin/api/update-info")
 async def admin_delete_update(admin: dict = Depends(require_admin)):
-    """管理员删除当前版本信息（不删文件）"""
-    _save_version_info({"version": "", "filename": "", "notes": "", "uploaded_at": "", "size": 0})
+    """管理员清除当前版本信息（不删文件）"""
+    _save_version_info({"version": "", "notes": "", "platforms": {}})
     return JSONResponse({"status": "success"})
 
 
@@ -1089,12 +1145,23 @@ async def admin_delete_update_file(filename: str, admin: dict = Depends(require_
     if not os.path.exists(file_path):
         return JSONResponse({"status": "error", "detail": "文件不存在"}, status_code=404)
     os.remove(file_path)
-    # 如果删除的是当前版本文件，清空版本信息
+    # 如果删除的是当前版本文件，清空对应平台信息
     info = _load_version_info()
+    changed = False
+    if "platforms" in info:
+        for plat, pf in list(info["platforms"].items()):
+            if pf.get("filename") == safe_name:
+                del info["platforms"][plat]
+                changed = True
+    # 旧格式兼容
     if info.get("filename") == safe_name:
-        _save_version_info({"version": "", "filename": "", "notes": "", "uploaded_at": "", "size": 0})
+        info["filename"] = ""
+        info["size"] = 0
+        info["uploaded_at"] = ""
+        changed = True
+    if changed:
+        _save_version_info(info)
     return JSONResponse({"status": "success"})
-
 
 
 if __name__ == "__main__":

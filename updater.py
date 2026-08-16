@@ -91,6 +91,9 @@ def _get_service_token() -> str:
     return os.environ.get("SERVICE_TOKEN", "lx-internal-service-token")
 
 
+_platform_str = "macos" if IS_MACOS else "windows"
+
+
 def check_latest_version() -> dict:
     """
     向认证服务查询最新版本信息。
@@ -101,7 +104,7 @@ def check_latest_version() -> dict:
     token = _get_service_token()
     try:
         req = urllib.request.Request(
-            f"{base_url}/update/check",
+            f"{base_url}/update/check?platform={_platform_str}",
             headers={
                 "X-Service-Token": token,
             },
@@ -113,7 +116,7 @@ def check_latest_version() -> dict:
             return {"error": "服务器未设置版本号"}
         return {
             "tag": version,
-            "url": f"{base_url}/update/download",
+            "url": f"{base_url}/update/download?platform={_platform_str}",
             "body": data.get("notes", ""),
             "has_file": data.get("has_file", False),
         }
