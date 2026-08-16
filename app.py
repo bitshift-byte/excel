@@ -7,6 +7,10 @@
 """
 
 import os
+
+# 清除代理环境变量，避免打包后 httpx 走代理导致连不上认证服务
+for _k in ("ALL_PROXY","HTTP_PROXY","HTTPS_PROXY","all_proxy","http_proxy","https_proxy"):
+    os.environ.pop(_k, None)
 import sys
 import json
 import uuid
