@@ -24,8 +24,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from merger import (
     BUILTIN_RULE_ID,
     BUILTIN_RULE,
-    load_rules,
-    save_rules,
     get_province_list,
     serialize_cell,
     read_all_sheets,
@@ -46,15 +44,28 @@ import mail_reader
 
 DATA_DIR = os.path.join(_base_dir(), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
-MAIL_CONFIG_FILE = os.path.join(DATA_DIR, "mail_config.json")
+MAIL_CONFIG_FILE = os.path.join(DATA_DIR, "mail_config.json")  # 保留用于向后兼容
+
+
+def get_all_rules() -> list:
+    """获取所有规则：内置规则 + 远程规则"""
+    remote = get_remote_rules()
+    return [BUILTIN_RULE] + remote
 
 
 @asynccontextmanager
 async def lifespan(app):
-    if os.path.exists(MAIL_CONFIG_FILE):
-        cfg = mail_reader.load_config(MAIL_CONFIG_FILE)
-        if cfg.get("enabled"):
-            mail_reader.start_background(cfg)
+    # 从认证服务获取邮件配置
+    app_cfg = fetch_app_config_from_auth_service()
+    global APP_CONFIG_CACHE, APP_CONFIG_CACHE_TIME
+    APP_CONFIG_CACHE = app_cfg
+    import time as _time
+    APP_CONFIG_CACHE_TIME = _time.time()
+    mail_cfg = app_cfg.get("mail_config", {})
+    if mail_cfg.get("enabled"):
+        mail_cfg["output_dir"] = OUTPUT_DIR
+        mail_cfg["processed_uids_file"] = os.path.join(DATA_DIR, "processed_uids.json")
+        mail_reader.start_background(mail_cfg)
     yield
     mail_reader.stop_background()
 
@@ -226,6 +237,55 @@ def verify_user_status_with_auth_service(username: str) -> bool:
     return True
 
 
+def fetch_app_config_from_auth_service() -> dict:
+    """从认证服务获取应用配置（邮件配置、功能开关、规则）"""
+    import httpx
+    try:
+        resp = httpx.get(
+            f"{AUTH_SERVICE_URL}/app-config",
+            headers={"X-Service-Token": _get_service_token()},
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("config", {})
+    except Exception as e:
+        print(f"[config] 无法从认证服务获取配置: {e}")
+    return {}
+
+
+# 缓存的应用配置
+APP_CONFIG_CACHE: dict = {}
+APP_CONFIG_CACHE_TIME: float = 0
+APP_CONFIG_CACHE_TTL = 300  # 5 分钟缓存
+
+
+def get_app_config() -> dict:
+    """获取应用配置（带缓存）"""
+    global APP_CONFIG_CACHE, APP_CONFIG_CACHE_TIME
+    import time as _time
+    now = _time.time()
+    if not APP_CONFIG_CACHE or (now - APP_CONFIG_CACHE_TIME) > APP_CONFIG_CACHE_TTL:
+        APP_CONFIG_CACHE = fetch_app_config_from_auth_service()
+        APP_CONFIG_CACHE_TIME = now
+    return APP_CONFIG_CACHE
+
+
+def get_mail_config() -> dict:
+    """获取邮件配置"""
+    return get_app_config().get("mail_config", {})
+
+
+def get_features() -> dict:
+    """获取功能开关"""
+    return get_app_config().get("features", {})
+
+
+def get_remote_rules() -> list:
+    """获取远程规则列表"""
+    return get_app_config().get("rules", [])
+
+
 # ===================== 路由 =====================
 
 @app.get("/login", response_class=HTMLResponse)
@@ -311,125 +371,10 @@ async def list_users(request: Request):
 
 @app.get("/api/rules")
 async def list_rules():
-    return JSONResponse(content={"status": "success", "rules": load_rules()})
+    return JSONResponse(content={"status": "success", "rules": get_all_rules()})
 
 
-@app.post("/api/rules")
-async def create_rule(request: Request):
-    require_admin_user(request)
-    body = await request.json()
-    name = body.get("name", "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="规则名称不能为空")
-    standard_headers = body.get("standard_headers", [])
-    if not standard_headers:
-        raise HTTPException(status_code=400, detail="请至少添加一个标准表头")
-
-    rules = load_rules()
-    now = datetime.datetime.now().isoformat(timespec="seconds")
-    rule = {
-        "id": "r" + uuid.uuid4().hex[:8],
-        "name": name,
-        "standard_headers": [
-            {
-                "name": sh.get("name", "").strip(),
-                "source_columns": [sc.strip() for sc in sh.get("source_columns", []) if sc.strip()],
-                **({"value_mappings": sh["value_mappings"]} if sh.get("value_mappings") else {}),
-            }
-            for sh in standard_headers
-            if sh.get("name", "").strip()
-        ],
-        "created_at": now,
-        "updated_at": now,
-    }
-    rules.append(rule)
-    save_rules(rules)
-    return JSONResponse(content={"status": "success", "rule": rule})
-
-
-@app.put("/api/rules/{rule_id}")
-async def update_rule(rule_id: str, request: Request):
-    require_admin_user(request)
-    body = await request.json()
-    name = body.get("name", "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="规则名称不能为空")
-    standard_headers = body.get("standard_headers", [])
-
-    if rule_id == BUILTIN_RULE_ID:
-        raise HTTPException(status_code=400, detail="内置规则不可修改")
-    rules = load_rules()
-    found = None
-    for r in rules:
-        if r["id"] == rule_id:
-            found = r
-            break
-    if not found:
-        raise HTTPException(status_code=404, detail="规则不存在")
-
-    found["name"] = name
-    found["standard_headers"] = [
-        {
-            "name": sh.get("name", "").strip(),
-            "source_columns": [sc.strip() for sc in sh.get("source_columns", []) if sc.strip()],
-            **({"value_mappings": sh["value_mappings"]} if sh.get("value_mappings") else {}),
-        }
-        for sh in standard_headers
-        if sh.get("name", "").strip()
-    ]
-    found["updated_at"] = datetime.datetime.now().isoformat(timespec="seconds")
-    save_rules(rules)
-    return JSONResponse(content={"status": "success", "rule": found})
-
-
-@app.delete("/api/rules/{rule_id}")
-async def delete_rule(rule_id: str, request: Request):
-    require_admin_user(request)
-    if rule_id == BUILTIN_RULE_ID:
-        raise HTTPException(status_code=400, detail="内置规则不可删除")
-    rules = load_rules()
-    new_rules = [r for r in rules if r["id"] != rule_id]
-    if len(new_rules) == len(rules):
-        raise HTTPException(status_code=404, detail="规则不存在")
-    save_rules(new_rules)
-    return JSONResponse(content={"status": "success"})
-
-
-@app.post("/api/rules/parse")
-async def parse_rule_excel(request: Request, files: List[UploadFile] = File(...)):
-    """上传 Excel 文件，解析所有 Sheet 的表头，用于规则创建时导入"""
-    require_admin_user(request)
-    if not files:
-        raise HTTPException(status_code=400, detail="请上传至少一个文件")
-
-    import tempfile
-    sheets_info = []
-    for f in files:
-        # 写入临时文件
-        suffix = os.path.splitext(f.filename)[1]
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(await f.read())
-            tmp_path = tmp.name
-        try:
-            sheets = read_all_sheets(tmp_path)
-            for sname, (headers, data_rows) in sheets.items():
-                header_list = [str(h) if h else "" for h in headers if h is not None and str(h).strip()]
-                sheets_info.append({
-                    "filename": f.filename,
-                    "sheet_name": sname,
-                    "headers": header_list,
-                    "row_count": len(data_rows),
-                })
-        finally:
-            os.unlink(tmp_path)
-
-    if not sheets_info:
-        raise HTTPException(status_code=400, detail="未找到有效的 Sheet 数据")
-
-    return JSONResponse(content={
-        "status": "success",
-        "sheets": sheets_info,
-    })
+# 规则管理已移至认证服务后台管理，桌面应用仅读取使用
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -443,6 +388,9 @@ async def mail_page(request: Request):
     user = get_current_user(request)
     if not user or user["role"] != "admin":
         return RedirectResponse("/mail/results", status_code=302)
+    features = get_features()
+    if not features.get("mail_reader", True):
+        return RedirectResponse("/", status_code=302)
     with open(_resource_path("templates/mail.html"), "r", encoding="utf-8") as f:
         return f.read()
 
@@ -451,6 +399,12 @@ async def mail_page(request: Request):
 async def mail_results_page(request: Request):
     with open(_resource_path("templates/results.html"), "r", encoding="utf-8") as f:
         return f.read()
+
+
+@app.get("/api/features")
+async def get_features_api():
+    """获取功能开关（供前端控制 UI 显示）"""
+    return JSONResponse(content={"status": "success", "features": get_features()})
 
 
 @app.get("/api/regions")
@@ -526,7 +480,7 @@ async def analyze_files(files: List[UploadFile] = File(...)):
         "all_columns": all_columns_set,
         "auto_groups": groups,
         "regions": get_province_list(),
-        "rules": load_rules(),
+        "rules": get_all_rules(),
     })
 
 
@@ -594,32 +548,24 @@ async def download():
 
 @app.get("/api/mail/config")
 async def get_mail_config():
-    cfg = None
-    if os.path.exists(MAIL_CONFIG_FILE):
-        with open(MAIL_CONFIG_FILE, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-    return JSONResponse(content={"status": "success", "config": cfg, "running": mail_reader.is_running()})
+    """获取邮件配置（从认证服务获取，桌面应用只读）"""
+    cfg = get_mail_config()
+    # 不返回 auth_code 给前端
+    safe_cfg = {k: v for k, v in cfg.items() if k != "auth_code"} if cfg else {}
+    return JSONResponse(content={"status": "success", "config": safe_cfg, "running": mail_reader.is_running()})
 
 
-@app.put("/api/mail/config")
-async def set_mail_config(request: Request):
-    require_admin_user(request)
-    body = await request.json()
-    with open(MAIL_CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(body, f, ensure_ascii=False, indent=2)
-    if body.get("enabled"):
-        mail_reader.start_background(body)
-    else:
-        mail_reader.stop_background()
-    return JSONResponse(content={"status": "success", "running": mail_reader.is_running()})
+# 邮件配置管理已移至认证服务后台管理，桌面应用仅读取使用
 
 
 @app.post("/api/mail/start")
 async def start_mail(request: Request):
     require_admin_user(request)
-    if not os.path.exists(MAIL_CONFIG_FILE):
-        raise HTTPException(status_code=400, detail="请先保存邮件配置")
-    cfg = mail_reader.load_config(MAIL_CONFIG_FILE)
+    cfg = get_mail_config()
+    if not cfg or not cfg.get("email"):
+        raise HTTPException(status_code=400, detail="邮件配置未设置，请在管理后台配置")
+    cfg["output_dir"] = OUTPUT_DIR
+    cfg["processed_uids_file"] = os.path.join(DATA_DIR, "processed_uids.json")
     mail_reader.start_background(cfg)
     return JSONResponse(content={"status": "success", "running": mail_reader.is_running()})
 
@@ -644,9 +590,11 @@ async def mail_logs():
 @app.post("/api/mail/run")
 async def run_mail_once(request: Request):
     require_admin_user(request)
-    if not os.path.exists(MAIL_CONFIG_FILE):
-        raise HTTPException(status_code=400, detail="请先保存邮件配置")
-    cfg = mail_reader.load_config(MAIL_CONFIG_FILE)
+    cfg = get_mail_config()
+    if not cfg or not cfg.get("email"):
+        raise HTTPException(status_code=400, detail="邮件配置未设置，请在管理后台配置")
+    cfg["output_dir"] = OUTPUT_DIR
+    cfg["processed_uids_file"] = os.path.join(DATA_DIR, "processed_uids.json")
     try:
         body = await request.json()
     except Exception:

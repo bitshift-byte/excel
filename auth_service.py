@@ -17,7 +17,9 @@
 - PUT  /admin/api/users/{username}/password 重置密码
 - DELETE /admin/api/users/{username}       删除用户
 
-配置文件: data/auth_config.json
+配置文件:
+  - data/auth_config.json     用户配置
+  - data/app_config.json      应用配置（邮件/功能开关/规则）
 """
 import os
 import sys
@@ -58,6 +60,29 @@ DATA_DIR = os.path.join(_base_dir(), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 AUTH_CONFIG_FILE = os.environ.get("AUTH_CONFIG_PATH", os.path.join(DATA_DIR, "auth_config.json"))
+
+# 应用配置文件（邮件配置、功能开关、合并规则）
+APP_CONFIG_FILE = os.path.join(DATA_DIR, "app_config.json")
+
+# 默认应用配置
+DEFAULT_APP_CONFIG = {
+    "mail_config": {
+        "enabled": False,
+        "imap_host": "imap.126.com",
+        "email": "",
+        "auth_code": "",
+        "subject_keywords": [],
+        "provinces": [],
+        "poll_interval_seconds": 3600,
+        "output_prefix": "邮件合并",
+    },
+    "features": {
+        "file_merge": True,      # 文件合并功能
+        "mail_reader": True,     # 邮件自动读取
+        "rule_management": True, # 规则管理（桌面端是否可查看规则）
+    },
+    "rules": [],
+}
 
 PASSWORD_SALT = os.environ.get("PASSWORD_SALT", "excel-merger-salt")
 
@@ -108,6 +133,51 @@ def save_config(cfg: dict, path: str = None) -> None:
     path = path or AUTH_CONFIG_FILE
     with open(path, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+
+# ===================== 应用配置 =====================
+
+def load_app_config() -> dict:
+    """加载应用配置（邮件、功能开关、规则），自动补全缺失字段"""
+    if not os.path.exists(APP_CONFIG_FILE):
+        cfg = json.loads(json.dumps(DEFAULT_APP_CONFIG))  # deep copy
+        save_app_config(cfg)
+        return cfg
+    try:
+        with open(APP_CONFIG_FILE, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        # 补全缺失字段
+        for key in DEFAULT_APP_CONFIG:
+            if key not in cfg:
+                cfg[key] = json.loads(json.dumps(DEFAULT_APP_CONFIG[key]))
+            elif isinstance(DEFAULT_APP_CONFIG[key], dict):
+                for sub_key in DEFAULT_APP_CONFIG[key]:
+                    if sub_key not in cfg[key]:
+                        cfg[key][sub_key] = DEFAULT_APP_CONFIG[key][sub_key]
+        return cfg
+    except (json.JSONDecodeError, IOError):
+        return json.loads(json.dumps(DEFAULT_APP_CONFIG))
+
+
+def save_app_config(cfg: dict) -> None:
+    with open(APP_CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+
+def public_mail_config(cfg: dict) -> dict:
+    """返回不含敏感信息的邮件配置（供桌面应用使用，但需要 auth_code 来连接邮箱）"""
+    mc = cfg.get("mail_config", {})
+    # 桌面应用需要 auth_code 来连接邮箱，所以全部返回
+    return dict(mc)
+
+
+def public_app_config(cfg: dict) -> dict:
+    """返回供桌面应用使用的完整应用配置"""
+    return {
+        "mail_config": public_mail_config(cfg),
+        "features": dict(cfg.get("features", DEFAULT_APP_CONFIG["features"])),
+        "rules": list(cfg.get("rules", [])),
+    }
 
 
 def hash_password(pw: str) -> str:
@@ -300,6 +370,17 @@ async def verify_user(request: Request):
     })
 
 
+# ===================== 服务间接口（供桌面应用调用） =====================
+
+@app.get("/app-config")
+async def get_app_config(request: Request):
+    """供桌面应用获取完整配置（邮件、功能开关、规则）— 需要服务密钥"""
+    if not verify_service_token(request):
+        return JSONResponse({"status": "error", "detail": "未授权"}, status_code=401)
+    cfg = load_app_config()
+    return JSONResponse({"status": "success", "config": public_app_config(cfg)})
+
+
 # ===================== 管理后台页面路由 =====================
 
 @app.get("/admin")
@@ -480,6 +561,148 @@ async def admin_delete_user(username: str, admin: dict = Depends(require_admin))
 
     cfg["users"] = [u for u in cfg["users"] if u.get("username") != username]
     save_config(cfg)
+    return JSONResponse({"status": "success"})
+
+
+
+# ===================== 管理后台 API — 应用配置 =====================
+
+@app.get("/admin/api/app-config")
+async def admin_get_app_config(admin: dict = Depends(require_admin)):
+    """获取完整应用配置"""
+    cfg = load_app_config()
+    return JSONResponse({"status": "success", "config": public_app_config(cfg)})
+
+
+@app.put("/admin/api/mail-config")
+async def admin_update_mail_config(request: Request, admin: dict = Depends(require_admin)):
+    """更新邮件配置"""
+    body = await request.json()
+    cfg = load_app_config()
+    mc = cfg.get("mail_config", {})
+
+    # 更新字段
+    for field in ("enabled", "imap_host", "email", "auth_code",
+                  "subject_keywords", "provinces", "poll_interval_seconds",
+                  "output_prefix"):
+        if field in body:
+            mc[field] = body[field]
+
+    cfg["mail_config"] = mc
+    save_app_config(cfg)
+    return JSONResponse({"status": "success", "config": public_mail_config(cfg)})
+
+
+@app.get("/admin/api/features")
+async def admin_get_features(admin: dict = Depends(require_admin)):
+    """获取功能开关"""
+    cfg = load_app_config()
+    return JSONResponse({"status": "success", "features": cfg.get("features", {})})
+
+
+@app.put("/admin/api/features")
+async def admin_update_features(request: Request, admin: dict = Depends(require_admin)):
+    """更新功能开关"""
+    body = await request.json()
+    cfg = load_app_config()
+    features = cfg.get("features", {})
+
+    for field in ("file_merge", "mail_reader", "rule_management"):
+        if field in body:
+            features[field] = bool(body[field])
+
+    cfg["features"] = features
+    save_app_config(cfg)
+    return JSONResponse({"status": "success", "features": features})
+
+
+# ===================== 管理后台 API — 规则管理 =====================
+
+@app.get("/admin/api/rules")
+async def admin_list_rules(admin: dict = Depends(require_admin)):
+    """获取规则列表"""
+    cfg = load_app_config()
+    return JSONResponse({"status": "success", "rules": cfg.get("rules", [])})
+
+
+@app.post("/admin/api/rules")
+async def admin_create_rule(request: Request, admin: dict = Depends(require_admin)):
+    """新增规则"""
+    import uuid as _uuid
+    body = await request.json()
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPExceptionLite(400, "规则名称不能为空")
+    standard_headers = body.get("standard_headers", [])
+    if not standard_headers:
+        raise HTTPExceptionLite(400, "请至少添加一个标准表头")
+
+    cfg = load_app_config()
+    now = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
+    rule = {
+        "id": "r" + _uuid.uuid4().hex[:8],
+        "name": name,
+        "standard_headers": [
+            {
+                "name": sh.get("name", "").strip(),
+                "source_columns": [sc.strip() for sc in sh.get("source_columns", []) if sc.strip()],
+                **({"value_mappings": sh["value_mappings"]} if sh.get("value_mappings") else {}),
+            }
+            for sh in standard_headers
+            if sh.get("name", "").strip()
+        ],
+        "created_at": now,
+        "updated_at": now,
+    }
+    cfg.setdefault("rules", []).append(rule)
+    save_app_config(cfg)
+    return JSONResponse({"status": "success", "rule": rule}, status_code=201)
+
+
+@app.put("/admin/api/rules/{rule_id}")
+async def admin_update_rule(rule_id: str, request: Request, admin: dict = Depends(require_admin)):
+    """编辑规则"""
+    body = await request.json()
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPExceptionLite(400, "规则名称不能为空")
+
+    cfg = load_app_config()
+    rules = cfg.get("rules", [])
+    found = None
+    for r in rules:
+        if r["id"] == rule_id:
+            found = r
+            break
+    if not found:
+        raise HTTPExceptionLite(404, "规则不存在")
+
+    standard_headers = body.get("standard_headers", [])
+    found["name"] = name
+    found["standard_headers"] = [
+        {
+            "name": sh.get("name", "").strip(),
+            "source_columns": [sc.strip() for sc in sh.get("source_columns", []) if sc.strip()],
+            **({"value_mappings": sh["value_mappings"]} if sh.get("value_mappings") else {}),
+        }
+        for sh in standard_headers
+        if sh.get("name", "").strip()
+    ]
+    found["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
+    save_app_config(cfg)
+    return JSONResponse({"status": "success", "rule": found})
+
+
+@app.delete("/admin/api/rules/{rule_id}")
+async def admin_delete_rule(rule_id: str, admin: dict = Depends(require_admin)):
+    """删除规则"""
+    cfg = load_app_config()
+    rules = cfg.get("rules", [])
+    new_rules = [r for r in rules if r["id"] != rule_id]
+    if len(new_rules) == len(rules):
+        raise HTTPExceptionLite(404, "规则不存在")
+    cfg["rules"] = new_rules
+    save_app_config(cfg)
     return JSONResponse({"status": "success"})
 
 

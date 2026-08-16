@@ -159,6 +159,65 @@ tbody tr:last-child td{border-bottom:none}
 .confirm-text{font-size:14px;color:var(--text-2);line-height:1.8;margin-bottom:8px}
 .confirm-name{font-weight:700;color:var(--primary-d)}
 
+/* ============ Tab Bar ============ */
+.tab-bar{display:flex;gap:2px;background:var(--glass-bg);backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);border:1px solid var(--glass-border);border-radius:var(--r-md);padding:4px;margin-bottom:24px;box-shadow:var(--shadow-sm);overflow-x:auto;scroll-behavior:smooth}
+.tab{display:inline-flex;align-items:center;gap:7px;padding:10px 18px;border:none;background:transparent;color:var(--text-3);font-size:13px;font-weight:700;font-family:var(--font-display);cursor:pointer;border-radius:var(--r-sm);transition:all var(--dur) var(--ease-spring);position:relative;white-space:nowrap}
+.tab svg{width:16px;height:16px;flex-shrink:0}
+.tab:hover{color:var(--primary-d);background:var(--primary-bg)}
+.tab.active{color:var(--primary-d);background:var(--primary-bg)}
+.tab.active::after{content:'';position:absolute;left:14px;right:14px;bottom:3px;height:3px;border-radius:var(--r-pill);background:var(--grad-sakura)}
+.tab-panel{display:none}
+.tab-panel.active{display:block;animation:fade-in .25s var(--ease-spring)}
+
+/* ============ Config / Feature / Rule cards ============ */
+.config-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:28px;box-shadow:var(--shadow-sm);max-width:680px;animation:blossom-in .4s var(--ease-spring) both}
+.config-card .card-head{display:flex;align-items:center;gap:10px;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--border-l)}
+.config-card .card-head svg{width:22px;height:22px;color:var(--primary)}
+.config-card .card-head h2{font-size:18px;font-weight:700;color:var(--text);font-family:var(--font-display)}
+.cr-hint{font-size:11px;color:var(--text-4);font-weight:600;margin-left:6px}
+.config-check-row{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--muted);border-radius:var(--r-sm);margin-bottom:20px}
+.config-check-row label{font-size:14px;font-weight:700;color:var(--text-2);font-family:var(--font-display)}
+
+.feature-row{display:flex;align-items:center;justify-content:space-between;padding:18px 0;border-bottom:1px solid var(--border-l);gap:16px}
+.feature-row:last-child{border-bottom:none;padding-bottom:0}
+.feature-row:first-of-type{padding-top:4px}
+.feature-info .fi-title{font-size:15px;font-weight:700;color:var(--text);font-family:var(--font-display)}
+.feature-info .fi-desc{font-size:12px;color:var(--text-4);margin-top:3px}
+
+/* ============ Rule cards ============ */
+.rule-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:18px 22px;box-shadow:var(--shadow-sm);transition:all var(--dur) var(--ease-spring);margin-bottom:14px;animation:blossom-in .35s var(--ease-spring) both}
+.rule-card:hover{box-shadow:var(--shadow-md);transform:translateY(-1px);border-color:var(--primary-l)}
+.rule-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:12px}
+.rule-name{font-size:16px;font-weight:700;color:var(--text);font-family:var(--font-display);display:flex;align-items:center;gap:8px;min-width:0;word-break:break-all}
+.rule-name svg{width:18px;height:18px;color:var(--primary);flex-shrink:0}
+.rule-meta{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--text-3);align-items:center}
+.rule-meta span{display:inline-flex;align-items:center;gap:4px}
+.rule-meta svg{width:13px;height:13px;opacity:.7}
+.rule-actions{display:flex;gap:6px;flex-shrink:0}
+.empty-state{text-align:center;padding:50px 20px;color:var(--text-4)}
+.empty-state svg{width:42px;height:42px;margin-bottom:10px;opacity:.5}
+
+/* ============ Rule modal / headers editor ============ */
+.modal-box.wide{max-width:760px;max-height:86vh;overflow-y:auto}
+.headers-title-row{display:flex;align-items:center;justify-content:space-between;margin:8px 0 10px}
+.headers-title-row label{font-size:13px;font-weight:700;color:var(--text-2);font-family:var(--font-display)}
+.header-block{background:var(--muted);border:1px solid var(--border-l);border-radius:var(--r-md);padding:14px 16px;margin-bottom:12px}
+.header-block-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.header-block-head .hb-title{font-size:13px;font-weight:700;color:var(--primary-d);font-family:var(--font-display)}
+.header-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px}
+.header-grid .modal-field{margin-bottom:0}
+.mappings-toggle{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--secondary-d);font-weight:700;cursor:pointer;font-family:var(--font-display);user-select:none}
+.mappings-toggle:hover{text-decoration:underline}
+.mappings-toggle svg{width:13px;height:13px;transition:transform var(--dur) var(--ease-spring)}
+.mappings-toggle.open svg{transform:rotate(180deg)}
+.mapping-list{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)}
+.mapping-row{background:var(--surface);border:1px solid var(--border-l);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:8px}
+.mapping-row-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.mapping-row-head .mr-label{font-size:12px;font-weight:700;color:var(--text-3);font-family:var(--font-display)}
+.mapping-row select{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;color:var(--text);background:var(--surface);font-family:inherit;margin-bottom:8px;cursor:pointer}
+.mapping-row select:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-bg)}
+.span-2{grid-column:1/-1}
+
 @media(max-width:768px){
   .content{padding:16px}
   .topbar{padding:0 16px}
@@ -166,6 +225,9 @@ tbody tr:last-child td{border-bottom:none}
   table{font-size:12px}
   thead th,tbody td{padding:8px}
   .cell-actions{flex-wrap:wrap}
+  .header-grid{grid-template-columns:1fr}
+  .tab{padding:8px 12px;font-size:12px}
+  .modal-box.wide{max-height:90vh}
 }
 </style>
 </head>
@@ -184,6 +246,13 @@ tbody tr:last-child td{border-bottom:none}
 <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></symbol>
 <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
 <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22 6 12 13 2 6"/></symbol>
+<symbol id="i-mailset" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5h13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><polyline points="2.5 6.5 8.5 11 14.5 6.5"/><circle cx="17.5" cy="16.5" r="2.6"/><path d="M17.5 13.3v.9M17.5 18.8v.9M14.3 16.5h.9M19.8 16.5h.9M15.25 14.25l.6.6M19.15 18.15l.6.6M19.75 14.25l-.6.6M15.85 18.15l-.6.6"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+<symbol id="i-toggle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="6"/><circle cx="16" cy="12" r="2.6"/></symbol>
+<symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
+<symbol id="i-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></symbol>
 </svg>
 
 <!-- ====== Login View ====== -->
@@ -234,7 +303,7 @@ tbody tr:last-child td{border-bottom:none}
 <div id="dashView">
   <header class="topbar">
     <div class="tb-logo">LX</div>
-    <div class="tb-title">用户管理</div>
+    <div class="tb-title" id="tbTitle">用户管理</div>
     <div class="tb-spacer"></div>
     <div class="tb-user">
       <div class="tb-avatar" id="tbAvatar">A</div>
@@ -249,6 +318,14 @@ tbody tr:last-child td{border-bottom:none}
   </header>
 
   <div class="content">
+    <div class="tab-bar">
+      <button class="tab active" data-tab="users" onclick="switchTab('users')"><svg><use href="#i-users"/></svg> 用户管理</button>
+      <button class="tab" data-tab="mail" onclick="switchTab('mail')"><svg><use href="#i-mailset"/></svg> 邮件配置</button>
+      <button class="tab" data-tab="features" onclick="switchTab('features')"><svg><use href="#i-toggle"/></svg> 功能开关</button>
+      <button class="tab" data-tab="rules" onclick="switchTab('rules')"><svg><use href="#i-layers"/></svg> 规则管理</button>
+    </div>
+
+    <div class="tab-panel active" id="panel-users">
     <div class="stats" id="statsRow"></div>
     <div class="action-bar">
       <h2>用户列表</h2>
@@ -272,6 +349,82 @@ tbody tr:last-child td{border-bottom:none}
           <tr><td colspan="6" class="empty-row">加载中...</td></tr>
         </tbody>
       </table>
+    </div>
+    </div><!-- /panel-users -->
+
+    <!-- ====== Mail Config Panel ====== -->
+    <div class="tab-panel" id="panel-mail">
+      <div class="config-card">
+        <div class="card-head"><svg><use href="#i-mailset"/></svg><h2>邮件配置</h2></div>
+        <div class="config-check-row">
+          <label for="mcEnabled">启用邮件自动读取</label>
+          <label class="toggle"><input type="checkbox" id="mcEnabled"><span class="slider"></span></label>
+        </div>
+        <div class="modal-field">
+          <label>邮箱地址</label>
+          <input type="text" id="mcEmail" placeholder="example@126.com">
+        </div>
+        <div class="modal-field">
+          <label>客户端授权码</label>
+          <input type="password" id="mcAuthCode" placeholder="邮箱授权码">
+        </div>
+        <div class="modal-field">
+          <label>IMAP服务器</label>
+          <input type="text" id="mcImapHost" placeholder="imap.126.com" value="imap.126.com">
+        </div>
+        <div class="modal-field">
+          <label>主题关键词<span class="cr-hint">逗号分隔</span></label>
+          <input type="text" id="mcKeywords" placeholder="如：报表,数据">
+        </div>
+        <div class="modal-field">
+          <label>筛选省份<span class="cr-hint">逗号分隔</span></label>
+          <input type="text" id="mcProvinces" placeholder="如：北京,上海">
+        </div>
+        <div class="modal-field">
+          <label>轮询间隔秒数</label>
+          <input type="number" id="mcPollInterval" value="3600" min="60">
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-primary" onclick="saveMailConfig()"><svg><use href="#i-save"/></svg> 保存配置</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== Features Panel ====== -->
+    <div class="tab-panel" id="panel-features">
+      <div class="config-card">
+        <div class="card-head"><svg><use href="#i-toggle"/></svg><h2>功能开关</h2></div>
+        <div class="feature-row">
+          <div class="feature-info">
+            <div class="fi-title">文件合并功能</div>
+            <div class="fi-desc">控制桌面应用的文件合并功能</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="featFileMerge" onchange="saveFeature('file_merge',this.checked)"><span class="slider"></span></label>
+        </div>
+        <div class="feature-row">
+          <div class="feature-info">
+            <div class="fi-title">邮件自动读取</div>
+            <div class="fi-desc">控制桌面应用的邮件读取功能</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="featMailReader" onchange="saveFeature('mail_reader',this.checked)"><span class="slider"></span></label>
+        </div>
+        <div class="feature-row">
+          <div class="feature-info">
+            <div class="fi-title">规则查看</div>
+            <div class="fi-desc">控制桌面应用是否可查看规则</div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="featRuleManagement" onchange="saveFeature('rule_management',this.checked)"><span class="slider"></span></label>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== Rules Panel ====== -->
+    <div class="tab-panel" id="panel-rules">
+      <div class="action-bar">
+        <h2>规则列表</h2>
+        <button class="btn btn-primary" onclick="openRuleAddModal()"><svg><use href="#i-plus"/></svg> 添加规则</button>
+      </div>
+      <div id="rulesList"><div class="empty-state">加载中...</div></div>
     </div>
   </div>
 </div>
@@ -341,6 +494,38 @@ tbody tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+<!-- ====== Rule Add/Edit Modal ====== -->
+<div class="modal-overlay" id="ruleModal">
+  <div class="modal-box wide">
+    <h3 id="ruleModalTitle"><svg><use href="#i-layers"/></svg> 添加规则</h3>
+    <div class="modal-field">
+      <label>规则名称</label>
+      <input type="text" id="ruleName" placeholder="如：默认合并规则">
+    </div>
+    <div class="headers-title-row">
+      <label>标准列定义</label>
+      <button class="btn btn-sm" onclick="addHeader()"><svg><use href="#i-plus"/></svg> 添加列</button>
+    </div>
+    <div id="headersEditor"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('ruleModal')">取消</button>
+      <button class="btn btn-primary" onclick="submitRuleForm()"><svg><use href="#i-save"/></svg> 保存规则</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====== Rule Delete Confirm Modal ====== -->
+<div class="modal-overlay" id="ruleDelModal">
+  <div class="modal-box">
+    <h3><svg><use href="#i-trash"/></svg> 确认删除</h3>
+    <div class="confirm-text">确定要删除规则 <span class="confirm-name" id="ruleDelName"></span> 吗？此操作不可撤销。</div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('ruleDelModal')">取消</button>
+      <button class="btn btn-danger" onclick="confirmDeleteRule()">确认删除</button>
+    </div>
+  </div>
+</div>
+
 <script>
 var currentAdmin=null;
 var users=[];
@@ -376,7 +561,7 @@ function showDashboard(){
     document.getElementById('tbRole').textContent=currentAdmin.role==='admin'?'管理员':'普通用户';
     document.getElementById('tbAvatar').textContent=(currentAdmin.name||currentAdmin.username||'A').charAt(0).toUpperCase();
   }
-  loadUsers();
+  switchTab('users');
 }
 
 // ====== Admin Login ======
@@ -633,6 +818,270 @@ async function confirmDelete(){
       var data=await resp.json();
       toast(data.detail||'删除失败','error');
     }
+  }catch(e){
+    toast('网络错误','error');
+  }
+}
+
+// ====== Tab Navigation ======
+var tabTitles={users:'用户管理',mail:'邮件配置',features:'功能开关',rules:'规则管理'};
+function switchTab(tab){
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active',t.dataset.tab===tab)});
+  document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.toggle('active',p.id==='panel-'+tab)});
+  var titleEl=document.getElementById('tbTitle');
+  if(titleEl)titleEl.textContent=tabTitles[tab]||'';
+  if(tab==='users')loadUsers();
+  else if(tab==='mail')loadMailConfig();
+  else if(tab==='features')loadFeatures();
+  else if(tab==='rules')loadRules();
+}
+
+// ====== Utils ======
+function toArray(v){return Array.isArray(v)?v:(v?String(v).split(',').map(function(s){return s.trim()}).filter(Boolean):[])}
+function p2(n){return n<10?'0'+n:''+n}
+function formatDate(s){var d=new Date(s);if(isNaN(d.getTime()))return s||'—';return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+' '+p2(d.getHours())+':'+p2(d.getMinutes())}
+function featureLabel(f){return {file_merge:'文件合并功能',mail_reader:'邮件自动读取',rule_management:'规则查看'}[f]||f}
+
+// ====== Mail Config ======
+async function loadMailConfig(){
+  try{
+    var resp=await fetch('/admin/api/app-config');
+    if(resp.status!==200){toast('加载配置失败','error');return}
+    var data=await resp.json();
+    var mc=(data&&data.config&&data.config.mail_config)||(data&&data.mail_config)||{};
+    document.getElementById('mcEnabled').checked=!!mc.enabled;
+    document.getElementById('mcEmail').value=mc.email||'';
+    document.getElementById('mcAuthCode').value=mc.auth_code||'';
+    document.getElementById('mcImapHost').value=mc.imap_host||'imap.126.com';
+    document.getElementById('mcKeywords').value=toArray(mc.subject_keywords).join(',');
+    document.getElementById('mcProvinces').value=toArray(mc.provinces).join(',');
+    document.getElementById('mcPollInterval').value=mc.poll_interval_seconds||3600;
+  }catch(e){
+    toast('网络错误','error');
+  }
+}
+
+async function saveMailConfig(){
+  var payload={
+    enabled:document.getElementById('mcEnabled').checked,
+    email:document.getElementById('mcEmail').value.trim(),
+    auth_code:document.getElementById('mcAuthCode').value.trim(),
+    imap_host:document.getElementById('mcImapHost').value.trim()||'imap.126.com',
+    subject_keywords:toArray(document.getElementById('mcKeywords').value),
+    provinces:toArray(document.getElementById('mcProvinces').value),
+    poll_interval_seconds:parseInt(document.getElementById('mcPollInterval').value,10)||3600,
+  };
+  try{
+    var resp=await fetch('/admin/api/mail-config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(resp.status===200){toast('邮件配置已保存','success')}
+    else{var d=await resp.json();toast(d.detail||'保存失败','error')}
+  }catch(e){
+    toast('网络错误','error');
+  }
+}
+
+// ====== Features ======
+async function loadFeatures(){
+  try{
+    var resp=await fetch('/admin/api/features');
+    if(resp.status!==200){toast('加载功能开关失败','error');return}
+    var data=await resp.json();
+    var f=(data&&data.features)||data||{};
+    document.getElementById('featFileMerge').checked=!!f.file_merge;
+    document.getElementById('featMailReader').checked=!!f.mail_reader;
+    document.getElementById('featRuleManagement').checked=!!f.rule_management;
+  }catch(e){
+    toast('网络错误','error');
+  }
+}
+
+async function saveFeature(field,val){
+  var payload={};payload[field]=val;
+  try{
+    var resp=await fetch('/admin/api/features',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(resp.status===200){toast((val?'已启用':'已关闭')+' '+featureLabel(field),'success')}
+    else{var d=await resp.json();toast(d.detail||'保存失败','error');loadFeatures()}
+  }catch(e){
+    toast('网络错误','error');
+    loadFeatures();
+  }
+}
+
+// ====== Rules ======
+var rules=[];
+var ruleEditMode=null;
+var ruleDelTarget=null;
+var ruleHeaders=[];
+
+async function loadRules(){
+  try{
+    var resp=await fetch('/admin/api/rules');
+    if(resp.status!==200){toast('加载规则失败','error');return}
+    var data=await resp.json();
+    rules=data.rules||data||[];
+    renderRules();
+  }catch(e){
+    toast('网络错误','error');
+  }
+}
+
+function renderRules(){
+  var box=document.getElementById('rulesList');
+  if(!rules.length){
+    box.innerHTML='<div class="empty-state"><svg><use href="#i-layers"/></svg><div>暂无规则，点击「添加规则」创建</div></div>';
+    return;
+  }
+  box.innerHTML=rules.map(function(r){
+    var cols=(r.standard_headers||[]).length;
+    var updated=r.updated_at?formatDate(r.updated_at):'—';
+    var rid=esc(String(r.id===undefined?'':r.id));
+    return '<div class="rule-card">'
+      +'<div class="rule-head">'
+        +'<div class="rule-name"><svg><use href="#i-layers"/></svg>'+esc(r.name||'未命名规则')+'</div>'
+        +'<div class="rule-actions">'
+          +'<button class="btn btn-sm" onclick="openRuleEditModal(\''+rid+'\')"><svg><use href="#i-edit"/></svg> 编辑</button>'
+          +'<button class="btn btn-sm btn-danger" onclick="openRuleDelModal(\''+rid+'\')"><svg><use href="#i-trash"/></svg> 删除</button>'
+        +'</div>'
+      +'</div>'
+      +'<div class="rule-meta">'
+        +'<span><svg><use href="#i-layers"/></svg> '+cols+' 个标准列</span>'
+        +'<span>更新于 '+esc(updated)+'</span>'
+        +(rid?'<span>ID: '+rid+'</span>':'')
+      +'</div>'
+    +'</div>';
+  }).join('');
+}
+
+function openRuleAddModal(){
+  ruleEditMode=null;
+  document.getElementById('ruleModalTitle').innerHTML='<svg><use href="#i-layers"/></svg> 添加规则';
+  document.getElementById('ruleName').value='';
+  ruleHeaders=[{name:'',source_columns:'',mappings:[]}];
+  renderHeaderEditor();
+  openModal('ruleModal');
+}
+
+function openRuleEditModal(id){
+  var r=rules.find(function(x){return String(x.id)===String(id)});
+  if(!r)return;
+  ruleEditMode=r.id;
+  document.getElementById('ruleModalTitle').innerHTML='<svg><use href="#i-edit"/></svg> 编辑规则';
+  document.getElementById('ruleName').value=r.name||'';
+  ruleHeaders=(r.standard_headers||[]).map(function(h){
+    return {
+      name:h.name||'',
+      source_columns:toArray(h.source_columns).join(','),
+      mappings:(h.value_mappings||[]).map(function(m){
+        if(m&&m.when_column!==undefined){
+          return {type:'column',when_column:m.when_column||'',equals:m.equals||'',use_column:m.use_column||''};
+        }
+        return {type:'value',source_file_contains:(m&&m.source_file_contains)||'',source_value:(m&&m.source_value)||'',target_value:(m&&m.target_value)||''};
+      })
+    };
+  });
+  if(!ruleHeaders.length)ruleHeaders=[{name:'',source_columns:'',mappings:[]}];
+  renderHeaderEditor();
+  openModal('ruleModal');
+}
+
+function renderHeaderEditor(){
+  var box=document.getElementById('headersEditor');
+  if(!ruleHeaders.length){
+    box.innerHTML='<div class="empty-state" style="padding:24px">尚未添加标准列，点击右上角「添加列」</div>';
+    return;
+  }
+  box.innerHTML=ruleHeaders.map(function(h,i){
+    var mappingsHtml=h.mappings.length?'<div class="mapping-list">'+h.mappings.map(function(m,mi){return renderMappingRow(i,mi,m)}).join('')+'</div>':'';
+    return '<div class="header-block">'
+      +'<div class="header-block-head">'
+        +'<div class="hb-title">标准列 #'+(i+1)+'</div>'
+        +'<button class="btn btn-sm btn-danger" onclick="removeHeader('+i+')"><svg><use href="#i-trash"/></svg></button>'
+      +'</div>'
+      +'<div class="header-grid">'
+        +'<div class="modal-field"><label>目标列名</label><input type="text" value="'+esc(h.name)+'" onchange="updateHeader('+i+',\'name\',this.value)" placeholder="如：姓名"></div>'
+        +'<div class="modal-field"><label>源列名<span class="cr-hint">逗号分隔</span></label><input type="text" value="'+esc(h.source_columns)+'" onchange="updateHeader('+i+',\'source_columns\',this.value)" placeholder="如：A列,B列"></div>'
+      +'</div>'
+      +'<span class="mappings-toggle'+(h.mappings.length?' open':'')+'" onclick="toggleMappings('+i+')"><svg><use href="#i-chevron"/></svg> 值映射 ('+h.mappings.length+')</span>'
+      +'<div id="mappingsBox_'+i+'" style="'+(h.mappings.length?'':'display:none')+'">'
+        +mappingsHtml
+        +'<button class="btn btn-sm" style="margin-top:8px" onclick="addMapping('+i+')"><svg><use href="#i-plus"/></svg> 添加映射</button>'
+      +'</div>'
+    +'</div>';
+  }).join('');
+}
+
+function renderMappingRow(hi,mi,m){
+  var sel='<select onchange="updateMappingType('+hi+','+mi+',this.value)">'
+    +'<option value="value"'+(m.type==='value'?' selected':'')+'>固定值映射</option>'
+    +'<option value="column"'+(m.type==='column'?' selected':'')+'>条件取列</option>'
+    +'</select>';
+  var fields='';
+  if(m.type==='column'){
+    fields='<div class="header-grid">'
+      +'<div class="modal-field"><label>判断列名</label><input type="text" value="'+esc(m.when_column)+'" onchange="updateMapping('+hi+','+mi+',\'when_column\',this.value)" placeholder="某列名"></div>'
+      +'<div class="modal-field"><label>等于值</label><input type="text" value="'+esc(m.equals)+'" onchange="updateMapping('+hi+','+mi+',\'equals\',this.value)" placeholder="等于该值"></div>'
+      +'<div class="modal-field span-2"><label>取此列的值</label><input type="text" value="'+esc(m.use_column)+'" onchange="updateMapping('+hi+','+mi+',\'use_column\',this.value)" placeholder="使用此列的值"></div>'
+    +'</div>';
+  }else{
+    fields='<div class="header-grid">'
+      +'<div class="modal-field"><label>来源文件包含</label><input type="text" value="'+esc(m.source_file_contains)+'" onchange="updateMapping('+hi+','+mi+',\'source_file_contains\',this.value)" placeholder="文件名包含"></div>'
+      +'<div class="modal-field"><label>源值</label><input type="text" value="'+esc(m.source_value)+'" onchange="updateMapping('+hi+','+mi+',\'source_value\',this.value)" placeholder="原始值"></div>'
+      +'<div class="modal-field span-2"><label>目标值</label><input type="text" value="'+esc(m.target_value)+'" onchange="updateMapping('+hi+','+mi+',\'target_value\',this.value)" placeholder="映射后的值"></div>'
+    +'</div>';
+  }
+  return '<div class="mapping-row">'
+    +'<div class="mapping-row-head"><span class="mr-label">映射 #'+(mi+1)+'</span><button class="btn btn-sm btn-danger" onclick="removeMapping('+hi+','+mi+')"><svg><use href="#i-trash"/></svg></button></div>'
+    +sel+fields
+  +'</div>';
+}
+
+function updateHeader(i,field,val){if(ruleHeaders[i])ruleHeaders[i][field]=val}
+function addHeader(){ruleHeaders.push({name:'',source_columns:'',mappings:[]});renderHeaderEditor()}
+function removeHeader(i){ruleHeaders.splice(i,1);renderHeaderEditor()}
+function toggleMappings(i){var b=document.getElementById('mappingsBox_'+i);var t=b?b.previousElementSibling:null;if(b)b.style.display=(b.style.display==='none'?'block':'none');if(t)t.classList.toggle('open')}
+function addMapping(hi){if(ruleHeaders[hi]){ruleHeaders[hi].mappings.push({type:'value',source_file_contains:'',source_value:'',target_value:''});renderHeaderEditor()}}
+function removeMapping(hi,mi){if(ruleHeaders[hi]){ruleHeaders[hi].mappings.splice(mi,1);renderHeaderEditor()}}
+function updateMapping(hi,mi,field,val){if(ruleHeaders[hi]&&ruleHeaders[hi].mappings[mi])ruleHeaders[hi].mappings[mi][field]=val}
+function updateMappingType(hi,mi,val){if(ruleHeaders[hi]&&ruleHeaders[hi].mappings[mi]){if(val==='column'){ruleHeaders[hi].mappings[mi]={type:'column',when_column:'',equals:'',use_column:''}}else{ruleHeaders[hi].mappings[mi]={type:'value',source_file_contains:'',source_value:'',target_value:''}}renderHeaderEditor()}}
+
+async function submitRuleForm(){
+  var name=document.getElementById('ruleName').value.trim();
+  if(!name){toast('规则名称不能为空','error');return}
+  var standard_headers=ruleHeaders.map(function(h){
+    var obj={name:h.name.trim(),source_columns:toArray(h.source_columns)};
+    if(h.mappings.length){
+      obj.value_mappings=h.mappings.map(function(m){
+        if(m.type==='column')return {when_column:m.when_column,equals:m.equals,use_column:m.use_column};
+        return {source_file_contains:m.source_file_contains,source_value:m.source_value,target_value:m.target_value};
+      });
+    }
+    return obj;
+  }).filter(function(h){return h.name});
+  var payload={name:name,standard_headers:standard_headers};
+  try{
+    var url='/admin/api/rules'+(ruleEditMode?'/'+encodeURIComponent(ruleEditMode):'');
+    var method=ruleEditMode?'PUT':'POST';
+    var resp=await fetch(url,{method:method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(resp.status===200||resp.status===201){toast(ruleEditMode?'规则已更新':'规则已添加','success');closeModal('ruleModal');loadRules()}
+    else{var d=await resp.json();toast(d.detail||'保存失败','error')}
+  }catch(e){
+    toast('网络错误','error');
+  }
+}
+
+function openRuleDelModal(id){
+  var r=rules.find(function(x){return String(x.id)===String(id)});
+  if(!r)return;
+  ruleDelTarget=r.id;
+  document.getElementById('ruleDelName').textContent=r.name||'未命名';
+  openModal('ruleDelModal');
+}
+
+async function confirmDeleteRule(){
+  try{
+    var resp=await fetch('/admin/api/rules/'+encodeURIComponent(ruleDelTarget),{method:'DELETE'});
+    if(resp.status===200){toast('规则已删除','success');closeModal('ruleDelModal');loadRules()}
+    else{var d=await resp.json();toast(d.detail||'删除失败','error')}
   }catch(e){
     toast('网络错误','error');
   }

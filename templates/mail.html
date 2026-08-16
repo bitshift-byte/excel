@@ -48,35 +48,51 @@
     <div class="mail-wrap">
       <div class="page-title"><svg><use href="#i-mail"/></svg> 邮件设置</div>
 
-      <div class="rule-form-wrap" style="margin-bottom:16px">
-        <div class="rfw-head"><h3><svg style="width:18px;height:18px"><use href="#i-mail"/></svg> 邮箱配置</h3></div>
-
-        <div class="rule-form-group" style="display:flex;align-items:center;gap:8px">
-          <input type="checkbox" id="mailEnabled" style="width:18px;height:18px">
-          <label class="rule-form-label" style="margin:0" for="mailEnabled">启用邮件自动读取（保存后自动开始轮询）</label>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head">
+          <div class="ch-icon"><svg><use href="#i-mail"/></svg></div>
+          <span class="ch-title">邮件配置状态</span>
+          <span class="ch-sub">配置由管理员在后台统一管理</span>
+          <div class="ch-spacer"></div>
+          <span id="mailStatusBadge" class="badge" style="padding:4px 12px;border-radius:999px;font-size:12px"></span>
         </div>
-
-        <div class="rule-form-group"><label class="rule-form-label">邮箱地址</label>
-          <input type="text" class="rule-form-input" id="mailEmail" placeholder="your_account@126.com"></div>
-
-        <div class="rule-form-group"><label class="rule-form-label">客户端授权码</label>
-          <input type="password" class="rule-form-input" id="mailAuthCode" placeholder="126 邮箱的客户端授权码（非登录密码）"></div>
-
-        <div class="rule-form-group"><label class="rule-form-label">主题关键词（逗号分隔，任一命中即处理）</label>
-          <input type="text" class="rule-form-input" id="mailKeywords" placeholder="总表, 月报"></div>
-
-        <div class="rule-form-group"><label class="rule-form-label">筛选省份（逗号分隔，留空 = 全量合并）</label>
-          <input type="text" class="rule-form-input" id="mailProvinces" placeholder="湖南省, 江苏省"></div>
-
-        <div style="display:flex;gap:16px">
-          <div class="rule-form-group" style="flex:1"><label class="rule-form-label">处理日期（留空 = 今天）</label>
-            <input type="date" class="rule-form-input" id="mailDate"></div>
-          <div class="rule-form-group" style="flex:1"><label class="rule-form-label">轮询间隔（秒）</label>
-            <input type="number" class="rule-form-input" id="mailInterval" value="3600"></div>
+        <div class="card-pad" id="mailConfigDisplay" style="padding:16px 20px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div>
+              <div style="font-size:12px;color:var(--text-4);margin-bottom:4px">邮箱地址</div>
+              <div id="cfgEmail" style="font-size:14px;color:var(--text-2);font-weight:600">-</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:var(--text-4);margin-bottom:4px">IMAP服务器</div>
+              <div id="cfgImap" style="font-size:14px;color:var(--text-2);font-weight:600">-</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:var(--text-4);margin-bottom:4px">主题关键词</div>
+              <div id="cfgKeywords" style="font-size:14px;color:var(--text-2);font-weight:600">-</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:var(--text-4);margin-bottom:4px">筛选省份</div>
+              <div id="cfgProvinces" style="font-size:14px;color:var(--text-2);font-weight:600">-</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:var(--text-4);margin-bottom:4px">轮询间隔</div>
+              <div id="cfgInterval" style="font-size:14px;color:var(--text-2);font-weight:600">-</div>
+            </div>
+          </div>
         </div>
+      </div>
 
-        <div style="display:flex;gap:10px;margin-top:20px">
-          <button class="btn btn-primary" style="flex:1" onclick="saveMailConfig()">保存配置</button>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-head">
+          <div class="ch-icon"><svg><use href="#i-zap"/></svg></div>
+          <span class="ch-title">手动操作</span>
+        </div>
+        <div class="card-pad" style="padding:16px 20px;display:flex;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px">
+            <label class="rule-form-label" style="margin-bottom:6px">处理日期（留空 = 今天）</label>
+            <input type="date" class="rule-form-input" id="mailDate" style="margin-bottom:0">
+          </div>
+          <button class="btn btn-primary" style="align-self:flex-end" onclick="runMailOnce()">立即执行一次</button>
         </div>
       </div>
 
@@ -131,37 +147,36 @@ async function loadMailConfig(){
     const data=await resp.json();
     if(data.status==='success'){
       const cfg=data.config||{};
-      document.getElementById('mailEnabled').checked=!!cfg.enabled;
-      document.getElementById('mailEmail').value=cfg.email||'';
-      document.getElementById('mailAuthCode').value=cfg.auth_code||'';
-      document.getElementById('mailKeywords').value=(cfg.subject_keywords||[]).join(', ');
-      document.getElementById('mailProvinces').value=(cfg.provinces||[]).join(', ');
-      document.getElementById('mailInterval').value=cfg.poll_interval_seconds||3600;
+      document.getElementById('cfgEmail').textContent=cfg.email||'未配置';
+      document.getElementById('cfgImap').textContent=cfg.imap_host||'-';
+      document.getElementById('cfgKeywords').textContent=(cfg.subject_keywords||[]).join('、')||'无';
+      document.getElementById('cfgProvinces').textContent=(cfg.provinces||[]).join('、')||'全量';
+      document.getElementById('cfgInterval').textContent=(cfg.poll_interval_seconds||3600)+' 秒';
       document.getElementById('mailDate').value=cfg.date||'';
+      // Status badge
+      const badge=document.getElementById('mailStatusBadge');
+      if(data.running){
+        badge.textContent='运行中';
+        badge.style.background='var(--accent-bg)';badge.style.color='var(--accent-d)';
+      }else if(cfg.enabled){
+        badge.textContent='已启用（未运行）';
+        badge.style.background='var(--amber-bg)';badge.style.color='var(--amber)';
+      }else{
+        badge.textContent='未启用';
+        badge.style.background='var(--muted)';badge.style.color='var(--text-4)';
+      }
     }
   }catch(e){toast('加载邮件配置失败','error')}
 }
-async function saveMailConfig(){
-  const cfg={
-    enabled:document.getElementById('mailEnabled').checked,
-    imap_host:'imap.126.com',
-    email:document.getElementById('mailEmail').value.trim(),
-    auth_code:document.getElementById('mailAuthCode').value.trim(),
-    subject_keywords:document.getElementById('mailKeywords').value.split(',').map(s=>s.trim()).filter(Boolean),
-    provinces:document.getElementById('mailProvinces').value.split(',').map(s=>s.trim()).filter(Boolean),
-    poll_interval_seconds:parseInt(document.getElementById('mailInterval').value)||3600,
-    date:document.getElementById('mailDate').value,
-    output_dir:'output',
-    output_prefix:'邮件合并',
-    processed_uids_file:'data/processed_uids.json',
-  };
-  showLoading('正在保存配置...');
+async function runMailOnce(){
+  const date=document.getElementById('mailDate').value;
+  showLoading('正在执行邮件处理...');
   try{
-    const resp=await fetch('/api/mail/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+    const resp=await fetch('/api/mail/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date})});
     const data=await resp.json();
     if(data.status==='success'){
-      toast(cfg.enabled?'配置已保存，已启动轮询':'配置已保存，已停止轮询');
-    }else{toast('保存失败: '+(data.detail||'未知错误'),'error')}
+      toast('处理完成，处理了 '+data.handled+' 封邮件');
+    }else{toast('处理失败: '+(data.detail||'未知错误'),'error')}
   }catch(e){toast('请求出错: '+e.message,'error')}
   finally{hideLoading()}
 }

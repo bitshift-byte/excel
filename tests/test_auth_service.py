@@ -444,3 +444,146 @@ def test_admin_can_demote_admin_when_multiple_exist(admin_client):
     resp = admin_client.put("/admin/api/users/admin2", json={"role": "user"})
     assert resp.status_code == 200
     assert resp.json()["user"]["role"] == "user"
+
+
+# ===================== 应用配置管理测试 =====================
+
+def test_app_config_requires_service_token(client):
+    """无服务密钥不能获取应用配置"""
+    resp = client.get("/app-config")
+    assert resp.status_code == 401
+
+
+def test_app_config_with_service_token(client):
+    """有服务密钥可获取应用配置"""
+    resp = client.get("/app-config", headers={"X-Service-Token": "lx-internal-service-token"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "success"
+    assert "mail_config" in data["config"]
+    assert "features" in data["config"]
+    assert "rules" in data["config"]
+
+
+def test_admin_get_app_config(admin_client):
+    """管理员可获取应用配置"""
+    resp = admin_client.get("/admin/api/app-config")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "mail_config" in data["config"]
+    assert "features" in data["config"]
+
+
+def test_admin_update_mail_config(admin_client):
+    """管理员可更新邮件配置"""
+    resp = admin_client.put("/admin/api/mail-config", json={
+        "enabled": True,
+        "email": "test@example.com",
+        "auth_code": "secret123",
+        "imap_host": "imap.example.com",
+        "subject_keywords": ["test"],
+        "provinces": ["北京市"],
+        "poll_interval_seconds": 1800,
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["config"]["email"] == "test@example.com"
+
+
+def test_admin_get_features(admin_client):
+    """管理员可获取功能开关"""
+    resp = admin_client.get("/admin/api/features")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "file_merge" in data["features"]
+    assert "mail_reader" in data["features"]
+
+
+def test_admin_update_features(admin_client):
+    """管理员可更新功能开关"""
+    resp = admin_client.put("/admin/api/features", json={
+        "file_merge": False,
+        "mail_reader": True,
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["features"]["file_merge"] is False
+    assert data["features"]["mail_reader"] is True
+
+
+def test_admin_list_rules(admin_client):
+    """管理员可获取规则列表"""
+    resp = admin_client.get("/admin/api/rules")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"
+    assert "rules" in resp.json()
+
+
+def test_admin_create_rule(admin_client):
+    """管理员可创建规则"""
+    resp = admin_client.post("/admin/api/rules", json={
+        "name": "测试规则",
+        "standard_headers": [
+            {"name": "列A", "source_columns": ["col_a", "A"]}
+        ],
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["rule"]["name"] == "测试规则"
+    assert len(data["rule"]["standard_headers"]) == 1
+
+
+def test_admin_create_rule_empty_name(admin_client):
+    """规则名不能为空"""
+    resp = admin_client.post("/admin/api/rules", json={
+        "name": "",
+        "standard_headers": [{"name": "a", "source_columns": ["a"]}],
+    })
+    assert resp.status_code == 400
+
+
+def test_admin_update_rule(admin_client):
+    """管理员可编辑规则"""
+    # 先创建
+    create_resp = admin_client.post("/admin/api/rules", json={
+        "name": "原规则",
+        "standard_headers": [{"name": "列A", "source_columns": ["a"]}],
+    })
+    rule_id = create_resp.json()["rule"]["id"]
+    # 再编辑
+    resp = admin_client.put(f"/admin/api/rules/{rule_id}", json={
+        "name": "改后规则",
+        "standard_headers": [{"name": "列B", "source_columns": ["b"]}],
+    })
+    assert resp.status_code == 200
+    assert resp.json()["rule"]["name"] == "改后规则"
+
+
+def test_admin_delete_rule(admin_client):
+    """管理员可删除规则"""
+    create_resp = admin_client.post("/admin/api/rules", json={
+        "name": "待删规则",
+        "standard_headers": [{"name": "a", "source_columns": ["a"]}],
+    })
+    rule_id = create_resp.json()["rule"]["id"]
+    resp = admin_client.delete(f"/admin/api/rules/{rule_id}")
+    assert resp.status_code == 200
+    # 确认已删除
+    rules = admin_client.get("/admin/api/rules").json()["rules"]
+    assert rule_id not in [r["id"] for r in rules]
+
+
+def test_admin_delete_nonexistent_rule(admin_client):
+    """删除不存在的规则返回 404"""
+    resp = admin_client.delete("/admin/api/rules/nonexistent-id")
+    assert resp.status_code == 404
+
+
+def test_app_config_unauthenticated_admin_api(client):
+    """无 admin session 不能访问应用配置管理 API"""
+    assert client.get("/admin/api/app-config").status_code == 401
+    assert client.put("/admin/api/mail-config", json={}).status_code == 401
+    assert client.get("/admin/api/features").status_code == 401
+    assert client.put("/admin/api/features", json={}).status_code == 401
+    assert client.get("/admin/api/rules").status_code == 401
+    assert client.post("/admin/api/rules", json={}).status_code == 401

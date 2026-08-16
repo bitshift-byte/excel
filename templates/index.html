@@ -50,7 +50,7 @@
       <div class="nav-section">
         <div class="nav-section-title">功能</div>
         <div class="nav-item active" onclick="goStep(1)"><svg><use href="#i-upload"/></svg> 文件合并</div>
-        <div class="nav-item" onclick="openRuleManager()"><svg><use href="#i-layers"/></svg> 规则管理</div>
+        <div class="nav-item" onclick="openRuleManager()"><svg><use href="#i-layers"/></svg> 规则列表</div>
         <div class="nav-item" onclick="window.location.href='/mail'"><svg><use href="#i-mail"/></svg> 邮件设置</div>
         <div class="nav-item" onclick="window.location.href='/mail/results'"><svg><use href="#i-download"/></svg> 处理结果</div>
       </div>
@@ -198,14 +198,13 @@
           <div id="previewSection"></div>
         </div>
 
-        <!-- ===== Rules Page ===== -->
+        <!-- ===== Rules Page (Read-Only) ===== -->
         <div class="step-panel" id="stepRules">
           <div class="rule-page-head">
             <div>
-              <h2><svg><use href="#i-layers"/></svg> 规则管理</h2>
-              <div class="rph-sub">规则用来把不同 Excel 中不同叫法的列统一成一个名字，上传时一键自动匹配</div>
+              <h2><svg><use href="#i-layers"/></svg> 规则列表</h2>
+              <div class="rph-sub">规则由管理员在后台统一配置，此处仅查看</div>
             </div>
-            <button class="btn btn-primary" onclick="showRuleForm()"><svg style="width:16px;height:16px"><use href="#i-edit"/></svg> 新建规则</button>
           </div>
           <div id="rulesContainer"></div>
         </div>
@@ -591,8 +590,7 @@ function renderRuleList(){
     html+='<div><div class="rch-name">'+esc(r.name)+'</div>';
     html+='<div class="rch-meta">'+colCount+' 个目标列名 · 更新于 '+esc(r.updated_at||'')+'</div></div></div>';
     html+='<div class="rch-actions">';
-    html+='<button class="rca-btn" onclick="event.stopPropagation();showRuleForm(\''+r.id+'\')" title="编辑"><svg><use href="#i-edit"/></svg></button>';
-    html+='<button class="rca-btn danger" onclick="event.stopPropagation();deleteRule(\''+r.id+'\')" title="删除"><svg><use href="#i-x"/></svg></button>';
+    // 规则管理移至后台，桌面端只读，不显示编辑/删除按钮
     html+='<div class="rch-chevron"><svg style="width:18px;height:18px"><use href="#i-chevron-right"/></svg></div>';
     html+='</div></div>';
     html+='<div class="rule-card-body">';
@@ -628,6 +626,8 @@ function toggleRuleCard(ruleId){
   if(card)card.classList.toggle('expanded');
 }
 function showRuleForm(ruleId){
+  toast('规则管理已移至管理后台','error');
+  return;
   editingRuleId=ruleId||null;
   let rule=null;
   if(ruleId){
@@ -880,6 +880,7 @@ function collectRuleFormData(){
   return{name,standard_headers:stdHeaders};
 }
 async function saveRuleForm(){
+  toast('规则管理已移至管理后台','error');return;
   const data=collectRuleFormData();
   if(!data)return;
   showLoading('正在保存...');
@@ -901,6 +902,8 @@ async function saveRuleForm(){
   finally{hideLoading()}
 }
 async function deleteRule(ruleId){
+  toast('规则管理已移至管理后台','error');
+  return;
   if(!confirm('确定删除此规则？'))return;
   try{
     const resp=await fetch('/api/rules/'+ruleId,{method:'DELETE'});
