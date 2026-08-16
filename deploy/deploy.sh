@@ -20,9 +20,9 @@ mkdir -p data/updates
 
 # 重建并重启 Docker 容器
 echo ">>> 重建 Docker 容器..."
-sudo docker-compose down
-sudo docker-compose build --no-cache
-sudo docker-compose up -d
+sudo docker compose down
+sudo docker compose build --no-cache
+sudo docker compose up -d
 
 # 等待服务启动
 echo ">>> 等待服务启动..."
