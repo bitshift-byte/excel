@@ -147,8 +147,8 @@ def load_users_from_auth_service() -> dict:
 
 USERS = load_users_from_auth_service()
 
-# session token → username 映射（内存存储，重启失效）
-SESSIONS: Dict[str, str] = {}
+# session token → {username, login_token} 映射（内存存储，重启失效）
+SESSIONS: Dict[str, dict] = {}
 SESSION_COOKIE = "nebula_session"
 SESSION_MAX_AGE = 86400  # 24h
 
@@ -180,13 +180,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
             now = _time.time()
             last_check = SESSION_LAST_CHECK.get(token, 0)
             if now - last_check > SESSION_STATUS_CHECK_INTERVAL:
-                is_enabled = verify_user_status_with_auth_service(username)
-                if not is_enabled:
-                    # 用户已被禁用，清除 session
+                login_token = SESSIONS[token].get("login_token", "")
+                is_valid, reason = verify_user_status_with_auth_service(username, login_token)
+                if not is_valid:
+                    # 用户已失效（被禁用/在其他设备登录），清除 session
                     del SESSIONS[token]
                     SESSION_LAST_CHECK.pop(token, None)
                     if path.startswith("/api/"):
-                        return JSONResponse({"status": "error", "detail": "账号已被禁用"}, status_code=403)
+                        return JSONResponse({"status": "error", "detail": reason or "账号已被禁用"}, status_code=403)
                     return RedirectResponse("/login", status_code=302)
                 SESSION_LAST_CHECK[token] = now
 
@@ -206,7 +207,8 @@ app.add_middleware(AuthMiddleware)
 def get_current_user(request: Request) -> Optional[dict]:
     token = request.cookies.get(SESSION_COOKIE)
     if token and token in SESSIONS:
-        username = SESSIONS[token]
+        session = SESSIONS[token]
+        username = session["username"]
         user_info = USERS.get(username)
         if user_info:
             return {
@@ -228,23 +230,28 @@ def require_admin_user(request: Request) -> dict:
     return user
 
 
-def verify_user_status_with_auth_service(username: str) -> bool:
-    """向认证服务实时校验用户当前是否仍启用"""
+def verify_user_status_with_auth_service(username: str, login_token: str = "") -> tuple:
+    """向认证服务实时校验用户当前是否仍启用，以及是否在其他设备登录。
+    返回 (is_valid: bool, reason: str)"""
     import httpx
     try:
         resp = httpx.post(
             f"{AUTH_SERVICE_URL}/verify-user",
-            json={"username": username},
+            json={"username": username, "login_token": login_token},
             headers={"X-Service-Token": _get_service_token()},
             timeout=10,
         )
         if resp.status_code == 200:
             data = resp.json()
-            return data.get("user", {}).get("enabled", False)
+            return (data.get("user", {}).get("enabled", False), "")
+        elif resp.status_code == 409:
+            return (False, "该账号已在其他设备登录")
+        elif resp.status_code == 404:
+            return (False, "用户不存在")
     except Exception:
         pass
     # 认证服务不可用时，保守地认为用户仍有效（避免服务故障导致全部登出）
-    return True
+    return (True, "")
 
 
 def fetch_app_config_from_auth_service() -> dict:
@@ -333,9 +340,10 @@ async def login_api(request: Request):
     global USERS
     USERS = load_users_from_auth_service()
 
-    # 将用户信息（含功能权限）存入 session
+    # 将用户信息存入 session（含登录令牌，用于单设备登录校验）
+    login_token = user_info.get("login_token", "")
     token = secrets.token_hex(16)
-    SESSIONS[token] = user_info["username"]
+    SESSIONS[token] = {"username": user_info["username"], "login_token": login_token}
 
     resp = JSONResponse({"status": "success", "user": {
         "username": user_info["username"],

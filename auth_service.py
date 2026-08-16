@@ -177,6 +177,10 @@ ADMIN_SESSIONS: Dict[str, dict] = {}
 
 ADMIN_COOKIE = "lx_admin_session"
 
+# 用户单设备登录：username → active login_token
+# 每次登录生成新 token，旧 token 自动失效（踢下线）
+ACTIVE_LOGINS: Dict[str, str] = {}
+
 
 # ===================== 配置加载 =====================
 
@@ -401,6 +405,10 @@ async def login(request: Request):
     if not user.get("enabled", True):
         return JSONResponse({"status": "error", "detail": "该账号已被禁用"}, status_code=403)
 
+    # 生成登录令牌，覆盖旧设备（单设备登录）
+    login_token = secrets.token_hex(16)
+    ACTIVE_LOGINS[user["username"]] = login_token
+
     return JSONResponse({
         "status": "success",
         "user": {
@@ -408,6 +416,7 @@ async def login(request: Request):
             "name": user.get("name", user["username"]),
             "role": user.get("role", "user"),
             "features": dict(user.get("features", DEFAULT_USER_FEATURES)),
+            "login_token": login_token,
         },
     })
 
@@ -438,7 +447,8 @@ async def list_users(request: Request):
 async def verify_user(request: Request):
     """
     供主应用内部调用的用户状态验证接口。
-    接收 {username}，返回该用户当前是否启用及角色信息。
+    接收 {username, login_token?}，返回该用户当前是否启用及角色信息。
+    如果传了 login_token 且与当前活跃 token 不匹配，返回 409（已被其他设备踢下线）。
     需要服务间通信密钥。
     """
     if not verify_service_token(request):
@@ -446,6 +456,7 @@ async def verify_user(request: Request):
 
     body = await request.json()
     username = body.get("username", "").strip()
+    login_token = body.get("login_token", "")
     if not username:
         return JSONResponse({"status": "error", "detail": "用户名不能为空"}, status_code=400)
 
@@ -453,6 +464,15 @@ async def verify_user(request: Request):
     user = find_user(username, cfg)
     if not user:
         return JSONResponse({"status": "error", "detail": "用户不存在"}, status_code=404)
+
+    # 单设备登录校验：如果传了 login_token 且不匹配，说明已在其他设备登录
+    if login_token:
+        active_token = ACTIVE_LOGINS.get(username)
+        if active_token and active_token != login_token:
+            return JSONResponse({
+                "status": "error",
+                "detail": "该账号已在其他设备登录",
+            }, status_code=409)
 
     return JSONResponse({
         "status": "success",
