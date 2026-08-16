@@ -177,9 +177,11 @@ ADMIN_SESSIONS: Dict[str, dict] = {}
 
 ADMIN_COOKIE = "lx_admin_session"
 
-# 用户单设备登录：username → active login_token
-# 每次登录生成新 token，旧 token 自动失效（踢下线）
-ACTIVE_LOGINS: Dict[str, str] = {}
+# 用户单设备登录：username → {"token": str, "login_time": float}
+# 登录时记录，第二次登录直接拒绝（不覆盖旧设备）
+# 用户退出时清除，超时后自动释放
+DEVICE_LOGIN_TIMEOUT = 86400  # 24 小时后自动释放绑定
+ACTIVE_LOGINS: Dict[str, dict] = {}
 
 
 # ===================== 配置加载 =====================
@@ -405,9 +407,24 @@ async def login(request: Request):
     if not user.get("enabled", True):
         return JSONResponse({"status": "error", "detail": "该账号已被禁用"}, status_code=403)
 
-    # 生成登录令牌，覆盖旧设备（单设备登录）
+    # 单设备登录：检查是否已在其他设备登录
+    existing = ACTIVE_LOGINS.get(user["username"])
+    if existing:
+        elapsed = time.time() - existing.get("login_time", 0)
+        if elapsed < DEVICE_LOGIN_TIMEOUT:
+            return JSONResponse({
+                "status": "error",
+                "detail": "该账号已在其他设备登录，请先在该设备退出登录，或联系管理员解绑",
+            }, status_code=409)
+        # 超时自动释放
+        del ACTIVE_LOGINS[user["username"]]
+
+    # 生成登录令牌，绑定当前设备
     login_token = secrets.token_hex(16)
-    ACTIVE_LOGINS[user["username"]] = login_token
+    ACTIVE_LOGINS[user["username"]] = {
+        "token": login_token,
+        "login_time": time.time(),
+    }
 
     return JSONResponse({
         "status": "success",
@@ -447,8 +464,7 @@ async def list_users(request: Request):
 async def verify_user(request: Request):
     """
     供主应用内部调用的用户状态验证接口。
-    接收 {username, login_token?}，返回该用户当前是否启用及角色信息。
-    如果传了 login_token 且与当前活跃 token 不匹配，返回 409（已被其他设备踢下线）。
+    接收 {username}，返回该用户当前是否启用及角色信息。
     需要服务间通信密钥。
     """
     if not verify_service_token(request):
@@ -456,7 +472,6 @@ async def verify_user(request: Request):
 
     body = await request.json()
     username = body.get("username", "").strip()
-    login_token = body.get("login_token", "")
     if not username:
         return JSONResponse({"status": "error", "detail": "用户名不能为空"}, status_code=400)
 
@@ -464,15 +479,6 @@ async def verify_user(request: Request):
     user = find_user(username, cfg)
     if not user:
         return JSONResponse({"status": "error", "detail": "用户不存在"}, status_code=404)
-
-    # 单设备登录校验：如果传了 login_token 且不匹配，说明已在其他设备登录
-    if login_token:
-        active_token = ACTIVE_LOGINS.get(username)
-        if active_token and active_token != login_token:
-            return JSONResponse({
-                "status": "error",
-                "detail": "该账号已在其他设备登录",
-            }, status_code=409)
 
     return JSONResponse({
         "status": "success",
@@ -487,6 +493,45 @@ async def verify_user(request: Request):
 
 
 # ===================== 服务间接口（供桌面应用调用） =====================
+
+@app.post("/logout")
+async def service_logout(request: Request):
+    """供主应用调用的退出登录接口，清除设备绑定。
+    接收 {username}，需要服务间通信密钥。"""
+    if not verify_service_token(request):
+        return JSONResponse({"status": "error", "detail": "未授权"}, status_code=401)
+
+    body = await request.json()
+    username = body.get("username", "").strip()
+    if username and username in ACTIVE_LOGINS:
+        del ACTIVE_LOGINS[username]
+    return JSONResponse({"status": "success"})
+
+
+@app.post("/admin/api/users/{username}/unbind-device")
+async def admin_unbind_device(username: str, admin: dict = Depends(require_admin)):
+    """管理员强制解绑用户设备"""
+    if username in ACTIVE_LOGINS:
+        del ACTIVE_LOGINS[username]
+    return JSONResponse({"status": "success"})
+
+
+@app.get("/admin/api/users/{username}/device-status")
+async def admin_device_status(username: str, admin: dict = Depends(require_admin)):
+    """查看用户设备绑定状态"""
+    active = ACTIVE_LOGINS.get(username)
+    if active:
+        elapsed = time.time() - active.get("login_time", 0)
+        remaining = max(0, DEVICE_LOGIN_TIMEOUT - elapsed)
+        return JSONResponse({
+            "status": "success",
+            "bound": True,
+            "login_time": active.get("login_time"),
+            "elapsed_seconds": int(elapsed),
+            "remaining_seconds": int(remaining),
+        })
+    return JSONResponse({"status": "success", "bound": False})
+
 
 @app.get("/app-config")
 async def get_app_config(request: Request):

@@ -147,7 +147,7 @@ def load_users_from_auth_service() -> dict:
 
 USERS = load_users_from_auth_service()
 
-# session token → {username, login_token} 映射（内存存储，重启失效）
+# session token → {username} 映射（内存存储，重启失效）
 SESSIONS: Dict[str, dict] = {}
 SESSION_COOKIE = "nebula_session"
 SESSION_MAX_AGE = 86400  # 24h
@@ -180,10 +180,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             now = _time.time()
             last_check = SESSION_LAST_CHECK.get(token, 0)
             if now - last_check > SESSION_STATUS_CHECK_INTERVAL:
-                login_token = SESSIONS[token].get("login_token", "")
-                is_valid, reason = verify_user_status_with_auth_service(username, login_token)
+                is_valid, reason = verify_user_status_with_auth_service(username)
                 if not is_valid:
-                    # 用户已失效（被禁用/在其他设备登录），清除 session
+                    # 用户已被禁用，清除 session
                     del SESSIONS[token]
                     SESSION_LAST_CHECK.pop(token, None)
                     if path.startswith("/api/"):
@@ -230,22 +229,20 @@ def require_admin_user(request: Request) -> dict:
     return user
 
 
-def verify_user_status_with_auth_service(username: str, login_token: str = "") -> tuple:
-    """向认证服务实时校验用户当前是否仍启用，以及是否在其他设备登录。
+def verify_user_status_with_auth_service(username: str) -> tuple:
+    """向认证服务实时校验用户当前是否仍启用。
     返回 (is_valid: bool, reason: str)"""
     import httpx
     try:
         resp = httpx.post(
             f"{AUTH_SERVICE_URL}/verify-user",
-            json={"username": username, "login_token": login_token},
+            json={"username": username},
             headers={"X-Service-Token": _get_service_token()},
             timeout=10,
         )
         if resp.status_code == 200:
             data = resp.json()
             return (data.get("user", {}).get("enabled", False), "")
-        elif resp.status_code == 409:
-            return (False, "该账号已在其他设备登录")
         elif resp.status_code == 404:
             return (False, "用户不存在")
     except Exception:
@@ -340,10 +337,9 @@ async def login_api(request: Request):
     global USERS
     USERS = load_users_from_auth_service()
 
-    # 将用户信息存入 session（含登录令牌，用于单设备登录校验）
-    login_token = user_info.get("login_token", "")
+    # 将用户信息存入 session
     token = secrets.token_hex(16)
-    SESSIONS[token] = {"username": user_info["username"], "login_token": login_token}
+    SESSIONS[token] = {"username": user_info["username"]}
 
     resp = JSONResponse({"status": "success", "user": {
         "username": user_info["username"],
@@ -364,6 +360,18 @@ async def login_api(request: Request):
 async def logout_api(request: Request):
     token = request.cookies.get(SESSION_COOKIE)
     if token and token in SESSIONS:
+        username = SESSIONS[token]["username"]
+        # 通知认证服务清除设备绑定
+        import httpx
+        try:
+            httpx.post(
+                f"{AUTH_SERVICE_URL}/logout",
+                json={"username": username},
+                headers={"X-Service-Token": _get_service_token()},
+                timeout=5,
+            )
+        except Exception:
+            pass
         del SESSIONS[token]
     SESSION_LAST_CHECK.pop(token, None)
     resp = JSONResponse({"status": "success"})

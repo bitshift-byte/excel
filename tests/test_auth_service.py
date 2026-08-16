@@ -28,6 +28,7 @@ def client(tmp_path, monkeypatch):
     cfg_file.write_text(json.dumps(TEST_CONFIG, ensure_ascii=False), encoding="utf-8")
     monkeypatch.setattr(auth_service, "AUTH_CONFIG_FILE", str(cfg_file))
     ADMIN_SESSIONS.clear()
+    auth_service.ACTIVE_LOGINS.clear()
     return TestClient(app)
 
 
@@ -713,7 +714,7 @@ def test_public_user_includes_features(client):
 # ===================== 单设备登录测试 =====================
 
 def test_login_returns_login_token(client):
-    """登录响应包含 login_token"""
+    """登录响应包含 login_token，且认证服务记录了设备绑定"""
     from auth_service import ACTIVE_LOGINS
     ACTIVE_LOGINS.clear()
     resp = client.post("/login", json={"username": "admin", "password": "admin123"})
@@ -721,61 +722,115 @@ def test_login_returns_login_token(client):
     data = resp.json()
     assert "login_token" in data["user"]
     assert data["user"]["login_token"]
-    # 认证服务记录了活跃登录
+    # 认证服务记录了活跃登录（dict 含 token + login_time）
     assert "admin" in ACTIVE_LOGINS
-    assert ACTIVE_LOGINS["admin"] == data["user"]["login_token"]
+    assert ACTIVE_LOGINS["admin"]["token"] == data["user"]["login_token"]
 
 
-def test_second_login_invalidates_first(client):
-    """第二次登录生成不同 token，旧 token 被覆盖"""
+def test_second_login_refused_returns_409(client):
+    """同一用户第二次登录被拒绝（不踢旧设备），返回 409"""
     from auth_service import ACTIVE_LOGINS
     ACTIVE_LOGINS.clear()
-    # 第一次登录
+    # 第一次登录成功
     resp1 = client.post("/login", json={"username": "admin", "password": "admin123"})
+    assert resp1.status_code == 200
     token1 = resp1.json()["user"]["login_token"]
-    # 第二次登录
+    # 第二次登录应被拒绝
     resp2 = client.post("/login", json={"username": "admin", "password": "admin123"})
-    token2 = resp2.json()["user"]["login_token"]
-    # token 不同
-    assert token1 != token2
-    # 活跃 token 是第二个
-    assert ACTIVE_LOGINS["admin"] == token2
+    assert resp2.status_code == 409
+    assert "其他设备" in resp2.json()["detail"]
+    # 旧设备 token 仍然保留（未被覆盖）
+    assert ACTIVE_LOGINS["admin"]["token"] == token1
 
 
-def test_verify_user_with_matching_login_token(client):
-    """校验用户状态时，login_token 匹配 → 正常返回"""
+def test_logout_clears_device_binding(client):
+    """用户退出后清除设备绑定，之后可以重新登录"""
     from auth_service import ACTIVE_LOGINS
     ACTIVE_LOGINS.clear()
-    resp = client.post("/login", json={"username": "admin", "password": "admin123"})
-    token = resp.json()["user"]["login_token"]
-    # 用正确的 token 校验
-    resp2 = client.post("/verify-user", json={"username": "admin", "login_token": token},
-                        headers={"X-Service-Token": "lx-internal-service-token"})
-    assert resp2.status_code == 200
-    assert resp2.json()["user"]["enabled"] is True
-
-
-def test_verify_user_with_stale_login_token_returns_409(client):
-    """校验用户状态时，login_token 不匹配（旧设备）→ 409"""
-    from auth_service import ACTIVE_LOGINS
-    ACTIVE_LOGINS.clear()
-    # 第一次登录
-    resp1 = client.post("/login", json={"username": "admin", "password": "admin123"})
-    old_token = resp1.json()["user"]["login_token"]
-    # 第二次登录（覆盖）
+    # 登录
     client.post("/login", json={"username": "admin", "password": "admin123"})
-    # 用旧 token 校验 → 应返回 409
-    resp = client.post("/verify-user", json={"username": "admin", "login_token": old_token},
+    assert "admin" in ACTIVE_LOGINS
+    # 退出（调用服务间 /logout）
+    resp = client.post("/logout", json={"username": "admin"},
                        headers={"X-Service-Token": "lx-internal-service-token"})
-    assert resp.status_code == 409
-    assert "其他设备" in resp.json()["detail"]
+    assert resp.status_code == 200
+    # 绑定已清除
+    assert "admin" not in ACTIVE_LOGINS
+    # 再次登录应成功
+    resp2 = client.post("/login", json={"username": "admin", "password": "admin123"})
+    assert resp2.status_code == 200
 
 
-def test_verify_user_without_login_token_still_works(client):
-    """不传 login_token 时，正常返回（向后兼容）"""
+def test_logout_requires_service_token(client):
+    """退出接口需要服务密钥"""
+    resp = client.post("/logout", json={"username": "admin"})
+    assert resp.status_code == 401
+
+
+def test_logout_nonexistent_user_ok(client):
+    """退出不存在的用户绑定也返回成功"""
+    from auth_service import ACTIVE_LOGINS
+    ACTIVE_LOGINS.clear()
+    resp = client.post("/logout", json={"username": "nobody"},
+                       headers={"X-Service-Token": "lx-internal-service-token"})
+    assert resp.status_code == 200
+
+
+def test_admin_unbind_device(admin_client):
+    """管理员强制解绑后，用户可重新登录"""
+    from auth_service import ACTIVE_LOGINS
+    ACTIVE_LOGINS.clear()
+    # 用户登录
+    client = admin_client
+    client.post("/login", json={"username": "user1", "password": "user123"})
+    assert "user1" in ACTIVE_LOGINS
+    # 管理员解绑
+    resp = client.post("/admin/api/users/user1/unbind-device")
+    assert resp.status_code == 200
+    assert "user1" not in ACTIVE_LOGINS
+    # 现在可以重新登录
+    resp2 = client.post("/login", json={"username": "user1", "password": "user123"})
+    assert resp2.status_code == 200
+
+
+def test_admin_device_status_bound(admin_client):
+    """查看已绑定设备的用户状态"""
+    from auth_service import ACTIVE_LOGINS
+    ACTIVE_LOGINS.clear()
+    client = admin_client
+    client.post("/login", json={"username": "user1", "password": "user123"})
+    resp = client.get("/admin/api/users/user1/device-status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["bound"] is True
+    assert data["remaining_seconds"] > 0
+
+
+def test_admin_device_status_free(admin_client):
+    """查看未绑定设备的用户状态"""
+    from auth_service import ACTIVE_LOGINS
+    ACTIVE_LOGINS.clear()
+    resp = admin_client.get("/admin/api/users/user1/device-status")
+    assert resp.status_code == 200
+    assert resp.json()["bound"] is False
+
+
+def test_verify_user_no_login_token_check(client):
+    """verify-user 不再校验 login_token，仅返回用户启用状态"""
     from auth_service import ACTIVE_LOGINS
     ACTIVE_LOGINS.clear()
     resp = client.post("/verify-user", json={"username": "admin"},
                        headers={"X-Service-Token": "lx-internal-service-token"})
     assert resp.status_code == 200
     assert resp.json()["user"]["enabled"] is True
+
+
+def test_verify_user_ignores_login_token_field(client):
+    """verify-user 即使传了 login_token 也不做设备校验（向后兼容）"""
+    from auth_service import ACTIVE_LOGINS
+    ACTIVE_LOGINS.clear()
+    client.post("/login", json={"username": "admin", "password": "admin123"})
+    # 传任意 token，不返回 409
+    resp = client.post("/verify-user", json={"username": "admin", "login_token": "wrong"},
+                       headers={"X-Service-Token": "lx-internal-service-token"})
+    assert resp.status_code == 200

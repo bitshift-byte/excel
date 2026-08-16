@@ -123,6 +123,9 @@ tbody tr:last-child td{border-bottom:none}
 .feat-badges{display:flex;gap:4px;flex-wrap:wrap}
 .feat-mini{font-size:10px;font-weight:700;padding:2px 7px;border-radius:var(--r-pill);background:rgba(0,0,0,.05);color:var(--text-4);font-family:var(--font-display)}
 .feat-mini.on{background:var(--primary-bg);color:var(--primary-d)}
+.dev-bound{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:var(--r-pill);background:var(--amber-bg);color:var(--amber-d);font-family:var(--font-display)}
+.dev-free{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:var(--r-pill);background:rgba(0,0,0,.05);color:var(--text-4);font-family:var(--font-display)}
+.dev-loading{font-size:11px;color:var(--text-4)}
 .cell-actions{display:flex;align-items:center;gap:6px}
 .empty-row{text-align:center;padding:40px;color:var(--text-4)}
 
@@ -346,11 +349,12 @@ tbody tr:last-child td{border-bottom:none}
             <th>角色</th>
             <th>功能授权</th>
             <th>状态</th>
+            <th>设备</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody id="userTableBody">
-          <tr><td colspan="7" class="empty-row">加载中...</td></tr>
+          <tr><td colspan="8" class="empty-row">加载中...</td></tr>
         </tbody>
       </table>
     </div>
@@ -640,7 +644,7 @@ async function loadUsers(){
 function renderTable(){
   var tbody=document.getElementById('userTableBody');
   if(!users.length){
-    tbody.innerHTML='<tr><td colspan="7" class="empty-row">暂无用户</td></tr>';
+    tbody.innerHTML='<tr><td colspan="8" class="empty-row">暂无用户</td></tr>';
     updateStats([]);
     return;
   }
@@ -661,6 +665,7 @@ function renderTable(){
     var actions='<div class="cell-actions">'
       +'<button class="btn btn-sm" onclick="openEditModal(\''+u.username+'\')"><svg><use href="#i-edit"/></svg></button>'
       +'<button class="btn btn-sm" onclick="openPwModal(\''+u.username+'\')"><svg><use href="#i-key"/></svg></button>'
+      +'<button class="btn btn-sm" onclick="unbindDevice(\''+u.username+'\')" title="解绑设备"><svg><use href="#i-log-out"/></svg></button>'
       +(isSelf?'<button class="btn btn-sm btn-danger" disabled><svg><use href="#i-trash"/></svg></button>'
         :'<button class="btn btn-sm btn-danger" onclick="openDelModal(\''+u.username+'\')"><svg><use href="#i-trash"/></svg></button>')
       +'</div>';
@@ -671,10 +676,12 @@ function renderTable(){
       +'<td>'+roleBadge+'</td>'
       +'<td>'+featBadges+'</td>'
       +'<td>'+toggleHtml+'</td>'
+      +'<td id="dev-'+u.username+'"><span class="dev-loading">...</span></td>'
       +'<td>'+actions+'</td>'
       +'</tr>';
   }).join('');
   updateStats(users);
+  loadAllDeviceStatus();
 }
 
 function updateStats(list){
@@ -690,6 +697,41 @@ function updateStats(list){
   ].map(function(s){
     return '<div class="stat"><div class="stat-label">'+s.label+'</div><div class="stat-value '+s.cls+'">'+s.value+'</div></div>';
   }).join('');
+}
+
+// ====== Device Binding ======
+async function loadDeviceStatus(username){
+  try{
+    var resp=await fetch('/admin/api/users/'+encodeURIComponent(username)+'/device-status');
+    if(resp.status!==200)return;
+    var data=await resp.json();
+    var el=document.getElementById('dev-'+username);
+    if(!el)return;
+    if(data.bound){
+      var hrs=Math.floor(data.remaining_seconds/3600);
+      var mins=Math.floor((data.remaining_seconds%3600)/60);
+      el.innerHTML='<span class="dev-bound">已绑定</span>';
+    }else{
+      el.innerHTML='<span class="dev-free">未绑定</span>';
+    }
+  }catch(e){}
+}
+
+function loadAllDeviceStatus(){
+  users.forEach(function(u){loadDeviceStatus(u.username)});
+}
+
+async function unbindDevice(username){
+  if(!confirm('确定要解绑用户 '+username+' 的设备吗？\n解绑后该用户可以在新设备登录。'))return;
+  try{
+    var resp=await fetch('/admin/api/users/'+encodeURIComponent(username)+'/unbind-device',{method:'POST'});
+    if(resp.status===200){
+      toast('已解绑 '+username+' 的设备','success');
+      loadDeviceStatus(username);
+    }else{
+      var d=await resp.json();toast(d.detail||'解绑失败','error');
+    }
+  }catch(e){toast('网络错误','error')}
 }
 
 // ====== Toggle Enabled ======
