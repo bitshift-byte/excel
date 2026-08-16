@@ -1,5 +1,5 @@
 """
-自动升级模块：通过 GitHub Releases 检查新版本并静默下载替换。
+自动升级模块：通过认证服务检查新版本并静默下载替换。
 - 启动时后台静默检查 → 有新版本静默下载到临时目录 → 写入待更新标记
 - 下次启动时检测到标记 → 执行替换 → 启动新版本 → 清理标记
 - 用户全程无感知
@@ -7,20 +7,12 @@
 Windows 专用：替换脚本使用 .bat（tasklist + copy + start）
 """
 import os
-import re
 import sys
 import json
-import shutil
 import tempfile
 import subprocess
 import urllib.request
 import urllib.error
-
-# GitHub 仓库信息
-GITHUB_OWNER = "bitshift-byte"
-GITHUB_REPO = "excel"
-
-API_URL = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 
 # 当前版本（CI 打包时通过正则自动替换）
 APP_VERSION = "v1.0.0"
@@ -32,7 +24,7 @@ PENDING_UPDATE_FILE = "pending_update.json"
 DOWNLOAD_TIMEOUT = 300          # 单次下载超时 5 分钟（exe 可能 50-100MB+）
 DOWNLOAD_RETRY = 3             # 下载失败重试次数
 DOWNLOAD_CHUNK = 65536         # 下载缓冲块大小
-API_TIMEOUT = 15               # GitHub API 超时
+API_TIMEOUT = 15               # API 超时
 
 
 def get_current_version() -> str:
@@ -50,34 +42,66 @@ def _pending_path() -> str:
     return os.path.join(_data_dir(), PENDING_UPDATE_FILE)
 
 
+def _get_auth_service_url() -> str:
+    """读取认证服务地址（与 app.py 的 _load_auth_service_url 逻辑一致）"""
+    # 1. 环境变量
+    url = os.environ.get("AUTH_SERVICE_URL")
+    if url:
+        return url.rstrip("/")
+    # 2. 配置文件
+    url_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "auth_service_url.txt")
+    if getattr(sys, "frozen", False):
+        if os.name == "nt":
+            appdata = os.environ.get("APPDATA")
+            base = os.path.join(appdata, "ExcelMerger") if appdata else os.path.dirname(sys.executable)
+        else:
+            base = os.path.dirname(sys.executable)
+        url_file = os.path.join(base, "data", "auth_service_url.txt")
+    try:
+        if os.path.exists(url_file):
+            with open(url_file, "r", encoding="utf-8") as f:
+                url = f.read().strip()
+                if url:
+                    return url.rstrip("/")
+    except Exception:
+        pass
+    # 3. 默认值
+    return "http://18.177.82.156:8001"
+
+
+def _get_service_token() -> str:
+    """读取服务间通信密钥"""
+    return os.environ.get("SERVICE_TOKEN", "lx-internal-service-token")
+
+
 def check_latest_version() -> dict:
     """
-    查询 GitHub 最新 release。
-    返回 {"tag": "v1.1.0", "url": "https://...exe", "body": "..."}
+    向认证服务查询最新版本信息。
+    返回 {"tag": "v1.1.0", "url": "...", "body": "...", "has_file": True}
     失败返回 {"error": "..."}
     """
+    base_url = _get_auth_service_url()
+    token = _get_service_token()
     try:
-        req = urllib.request.Request(API_URL, headers={
-            "User-Agent": "LX-Excel-Merger-Updater",
-            "Accept": "application/vnd.github+json",
-        })
+        req = urllib.request.Request(
+            f"{base_url}/update/check",
+            headers={
+                "X-Service-Token": token,
+            },
+        )
         with urllib.request.urlopen(req, timeout=API_TIMEOUT) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-        tag = data.get("tag_name", "")
-        body = data.get("body", "")
-        exe_url = None
-        for asset in data.get("assets", []):
-            name = asset.get("name", "")
-            if name.endswith(".exe"):
-                exe_url = asset.get("browser_download_url", "")
-                break
-        if not tag:
-            return {"error": "未找到版本号"}
-        return {"tag": tag, "url": exe_url, "body": body}
+        version = data.get("version", "")
+        if not version:
+            return {"error": "服务器未设置版本号"}
+        return {
+            "tag": version,
+            "url": f"{base_url}/update/download",
+            "body": data.get("notes", ""),
+            "has_file": data.get("has_file", False),
+        }
     except urllib.error.HTTPError as e:
-        if e.code == 403 and "rate limit" in (e.reason or "").lower():
-            return {"error": "GitHub API 速率限制，请稍后再试"}
-        return {"error": f"GitHub API 错误: HTTP {e.code}"}
+        return {"error": f"认证服务错误: HTTP {e.code}"}
     except urllib.error.URLError as e:
         return {"error": f"网络错误: {e.reason}"}
     except Exception as e:
@@ -111,10 +135,13 @@ def _download_file(url: str, dest_path: str) -> bool:
     下载文件到指定路径，支持重试。
     使用临时文件写入，成功后原子重命名，避免下载到一半的损坏文件。
     """
+    token = _get_service_token()
     for attempt in range(1, DOWNLOAD_RETRY + 1):
         tmp_path = dest_path + ".downloading"
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "LX-Excel-Merger-Updater"})
+            req = urllib.request.Request(url, headers={
+                "X-Service-Token": token,
+            })
             with urllib.request.urlopen(req, timeout=DOWNLOAD_TIMEOUT) as resp:
                 # 获取文件总大小（用于将来扩展进度条）
                 total = resp.getheader("Content-Length")
@@ -169,13 +196,13 @@ def check_and_download_update() -> dict:
             "error": None,
         }
 
-    if not result.get("url"):
+    if not result.get("has_file"):
         return {
             "has_update": True,
             "current": current,
             "latest": latest,
             "body": result.get("body", ""),
-            "error": "新版本已发布但未找到 exe 下载链接",
+            "error": "新版本已发布但服务器上暂无安装包",
         }
 
     # 下载新 exe 到临时目录
@@ -339,6 +366,6 @@ def check_and_update(auto: bool = False) -> dict:
             "current": current,
             "latest": latest,
             "body": result.get("body", ""),
-            "url": result.get("url"),
+            "has_file": result.get("has_file", False),
             "error": None,
         }

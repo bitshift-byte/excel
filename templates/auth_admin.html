@@ -259,6 +259,8 @@ tbody tr:last-child td{border-bottom:none}
 <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
 <symbol id="i-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></symbol>
 <symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></symbol>
 </svg>
 
 <!-- ====== Login View ====== -->
@@ -329,6 +331,7 @@ tbody tr:last-child td{border-bottom:none}
       <button class="tab" data-tab="mail" onclick="switchTab('mail')"><svg><use href="#i-mailset"/></svg> 邮件配置</button>
       <button class="tab" data-tab="features" onclick="switchTab('features')"><svg><use href="#i-toggle"/></svg> 功能开关</button>
       <button class="tab" data-tab="rules" onclick="switchTab('rules')"><svg><use href="#i-layers"/></svg> 规则管理</button>
+      <button class="tab" data-tab="update" onclick="switchTab('update')"><svg><use href="#i-download"/></svg> 版本更新</button>
     </div>
 
     <div class="tab-panel active" id="panel-users">
@@ -433,6 +436,51 @@ tbody tr:last-child td{border-bottom:none}
         <button class="btn btn-primary" onclick="openRuleAddModal()"><svg><use href="#i-plus"/></svg> 添加规则</button>
       </div>
       <div id="rulesList"><div class="empty-state">加载中...</div></div>
+    </div>
+
+    <div class="tab-panel" id="panel-update">
+      <div class="action-bar">
+        <h2>版本更新管理</h2>
+      </div>
+      <div id="updateInfoCard" style="background:var(--card-bg);border-radius:var(--r-lg);padding:20px;margin-bottom:16px;border:1px solid var(--border)">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+          <div>
+            <div style="font-size:13px;color:var(--text-4);font-family:var(--font-display)">当前发布版本</div>
+            <div id="updVersion" style="font-size:24px;font-weight:800;color:var(--primary-d);font-family:var(--font-display)">—</div>
+            <div id="updNotes" style="font-size:13px;color:var(--text-3);margin-top:6px;max-width:500px;white-space:pre-wrap">—</div>
+            <div id="updMeta" style="font-size:12px;color:var(--text-4);margin-top:6px"></div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm" onclick="loadUpdateInfo()">刷新</button>
+            <button class="btn btn-sm btn-danger" onclick="clearVersion()">清除版本</button>
+          </div>
+        </div>
+      </div>
+      <div style="background:var(--card-bg);border-radius:var(--r-lg);padding:20px;border:1px solid var(--border)">
+        <h3 style="font-size:15px;font-weight:700;margin-bottom:12px;font-family:var(--font-display)">上传新版本</h3>
+        <div class="modal-field">
+          <label>版本号</label>
+          <input type="text" id="updInputVersion" placeholder="如 v1.2.0">
+        </div>
+        <div class="modal-field">
+          <label>更新说明</label>
+          <textarea id="updInputNotes" rows="3" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-md);font-size:13px;resize:vertical" placeholder="本次更新内容..."></textarea>
+        </div>
+        <div class="modal-field">
+          <label>选择 exe 文件</label>
+          <input type="file" id="updInputFile" accept=".exe" style="font-size:13px">
+        </div>
+        <button class="btn btn-primary" onclick="uploadExe()" id="uploadBtn" style="margin-top:8px">
+          <svg><use href="#i-upload"/></svg> 上传
+        </button>
+        <div id="uploadProgress" style="display:none;margin-top:8px;font-size:13px;color:var(--text-3)">
+          正在上传... <span id="uploadPct"></span>
+        </div>
+      </div>
+      <div style="background:var(--card-bg);border-radius:var(--r-lg);padding:20px;margin-top:16px;border:1px solid var(--border)">
+        <h3 style="font-size:15px;font-weight:700;margin-bottom:12px;font-family:var(--font-display)">已上传文件</h3>
+        <div id="updFileList"><div class="empty-state">加载中...</div></div>
+      </div>
     </div>
   </div>
 </div>
@@ -891,7 +939,7 @@ async function confirmDelete(){
 }
 
 // ====== Tab Navigation ======
-var tabTitles={users:'用户管理',mail:'邮件配置',features:'功能开关',rules:'规则管理'};
+var tabTitles={users:'用户管理',mail:'邮件配置',features:'功能开关',rules:'规则管理',update:'版本更新'};
 function switchTab(tab){
   document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active',t.dataset.tab===tab)});
   document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.toggle('active',p.id==='panel-'+tab)});
@@ -901,6 +949,7 @@ function switchTab(tab){
   else if(tab==='mail')loadMailConfig();
   else if(tab==='features')loadFeatures();
   else if(tab==='rules')loadRules();
+  else if(tab==='update')loadUpdateInfo();
 }
 
 // ====== Utils ======
@@ -1181,6 +1230,109 @@ document.getElementById('loginPassword').addEventListener('keydown',function(e){
 
 // Start
 init();
+
+// ====== Version Update Management ======
+async function loadUpdateInfo(){
+  try{
+    var resp=await fetch('/admin/api/update-info');
+    if(resp.status!==200){document.getElementById('updVersion').textContent='加载失败';return}
+    var data=await resp.json();
+    var info=data.current||{};
+    document.getElementById('updVersion').textContent=info.version||'未设置';
+    document.getElementById('updNotes').textContent=info.notes||'—';
+    var meta='';
+    if(info.uploaded_at)meta+='上传时间: '+info.uploaded_at;
+    if(info.size)meta+=(meta?' · ':'')+'大小: '+(info.size/1024/1024).toFixed(1)+' MB';
+    if(info.filename)meta+=(meta?' · ':'')+'文件: '+info.filename;
+    document.getElementById('updMeta').textContent=meta;
+    // Render file list
+    var fl=document.getElementById('updFileList');
+    var files=data.files||[];
+    if(!files.length){fl.innerHTML='<div class="empty-state">暂无文件</div>';return}
+    fl.innerHTML='<table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;font-size:12px;color:var(--text-4);font-family:var(--font-display)"><th style="padding:6px">文件名</th><th style="padding:6px">大小</th><th style="padding:6px">修改时间</th><th style="padding:6px">操作</th></tr></thead><tbody>'
+      +files.map(function(f){
+        return '<tr><td style="padding:6px;font-size:13px">'+f.filename+'</td>'
+          +'<td style="padding:6px;font-size:13px">'+(f.size/1024/1024).toFixed(1)+' MB</td>'
+          +'<td style="padding:6px;font-size:12px;color:var(--text-4)">'+f.modified+'</td>'
+          +'<td style="padding:6px"><button class="btn btn-sm btn-danger" onclick="deleteUpdFile(\''+f.filename+'\')">删除</button></td></tr>';
+      }).join('')
+      +'</tbody></table>';
+  }catch(e){document.getElementById('updVersion').textContent='加载失败'}
+}
+
+async function uploadExe(){
+  var version=document.getElementById('updInputVersion').value.trim();
+  var notes=document.getElementById('updInputNotes').value.trim();
+  var fileInput=document.getElementById('updInputFile');
+  if(!version){toast('请输入版本号','error');return}
+  if(!fileInput.files.length){toast('请选择exe文件','error');return}
+  var file=fileInput.files[0];
+  if(file.size<1000000){toast('文件过小，可能不是有效安装包','error');return}
+  if(file.size>200*1024*1024){toast('文件超过200MB限制','error');return}
+
+  var btn=document.getElementById('uploadBtn');
+  btn.disabled=true;btn.style.opacity='0.5';
+  document.getElementById('uploadProgress').style.display='block';
+
+  var formData=new FormData();
+  formData.append('file',file);
+  formData.append('version',version);
+  formData.append('notes',notes);
+
+  try{
+    var xhr=new XMLHttpRequest();
+    xhr.open('POST','/admin/api/upload-exe');
+    xhr.upload.onprogress=function(e){
+      if(e.lengthComputable){
+        var pct=Math.round(e.loaded/e.total*100);
+        document.getElementById('uploadPct').textContent=pct+'%';
+      }
+    };
+    xhr.onload=function(){
+      btn.disabled=false;btn.style.opacity='';
+      document.getElementById('uploadProgress').style.display='none';
+      if(xhr.status===200){
+        toast('上传成功','success');
+        document.getElementById('updInputVersion').value='';
+        document.getElementById('updInputNotes').value='';
+        document.getElementById('updInputFile').value='';
+        loadUpdateInfo();
+      }else{
+        try{var d=JSON.parse(xhr.responseText);toast(d.detail||'上传失败','error')}
+        catch(e){toast('上传失败','error')}
+      }
+    };
+    xhr.onerror=function(){
+      btn.disabled=false;btn.style.opacity='';
+      document.getElementById('uploadProgress').style.display='none';
+      toast('网络错误','error');
+    };
+    xhr.send(formData);
+  }catch(e){
+    btn.disabled=false;btn.style.opacity='';
+    document.getElementById('uploadProgress').style.display='none';
+    toast('上传失败','error');
+  }
+}
+
+async function clearVersion(){
+  if(!confirm('确定清除当前版本信息吗？已上传的文件不会被删除。'))return;
+  try{
+    var resp=await fetch('/admin/api/update-info',{method:'DELETE'});
+    if(resp.status===200){toast('版本信息已清除','success');loadUpdateInfo()}
+    else{toast('操作失败','error')}
+  }catch(e){toast('网络错误','error')}
+}
+
+async function deleteUpdFile(filename){
+  if(!confirm('确定删除文件 '+filename+' 吗？'))return;
+  try{
+    var resp=await fetch('/admin/api/update-file/'+encodeURIComponent(filename),{method:'DELETE'});
+    if(resp.status===200){toast('文件已删除','success');loadUpdateInfo()}
+    else{var d=await resp.json();toast(d.detail||'删除失败','error')}
+  }catch(e){toast('网络错误','error')}
+}
+
 </script>
 </body>
 </html>

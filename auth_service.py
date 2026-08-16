@@ -29,9 +29,9 @@ import hashlib
 import secrets
 from typing import Optional, Dict, Any
 
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request, Depends, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
+from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 
@@ -63,6 +63,13 @@ AUTH_CONFIG_FILE = os.environ.get("AUTH_CONFIG_PATH", os.path.join(DATA_DIR, "au
 
 # 应用配置文件（邮件配置、功能开关、合并规则）
 APP_CONFIG_FILE = os.path.join(DATA_DIR, "app_config.json")
+
+# 更新文件目录（存放上传的 exe 安装包）
+UPLOAD_DIR = os.path.join(DATA_DIR, "updates")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# 版本信息文件
+VERSION_INFO_FILE = os.path.join(UPLOAD_DIR, "version_info.json")
 
 
 # ===================== 内置默认规则 =====================
@@ -923,6 +930,147 @@ async def admin_delete_rule(rule_id: str, admin: dict = Depends(require_admin)):
     cfg["rules"] = new_rules
     save_app_config(cfg)
     return JSONResponse({"status": "success"})
+
+
+
+# ===================== 软件升级管理 =====================
+
+def _load_version_info() -> dict:
+    """读取当前版本信息"""
+    try:
+        if os.path.exists(VERSION_INFO_FILE):
+            with open(VERSION_INFO_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {"version": "", "filename": "", "notes": "", "uploaded_at": "", "size": 0}
+
+
+def _save_version_info(info: dict):
+    with open(VERSION_INFO_FILE, "w", encoding="utf-8") as f:
+        json.dump(info, f, ensure_ascii=False, indent=2)
+
+
+@app.get("/update/check")
+async def update_check(request: Request):
+    """供桌面应用检查更新（需服务密钥）。
+    返回当前最新版本信息。"""
+    if not verify_service_token(request):
+        return JSONResponse({"status": "error", "detail": "未授权"}, status_code=401)
+    info = _load_version_info()
+    return JSONResponse({
+        "status": "success",
+        "version": info.get("version", ""),
+        "filename": info.get("filename", ""),
+        "notes": info.get("notes", ""),
+        "uploaded_at": info.get("uploaded_at", ""),
+        "size": info.get("size", 0),
+        "has_file": bool(info.get("filename") and os.path.exists(os.path.join(UPLOAD_DIR, info["filename"]))),
+    })
+
+
+@app.get("/update/download")
+async def update_download(request: Request):
+    """供桌面应用下载更新文件（需服务密钥）"""
+    if not verify_service_token(request):
+        return JSONResponse({"status": "error", "detail": "未授权"}, status_code=401)
+    info = _load_version_info()
+    filename = info.get("filename", "")
+    if not filename:
+        return JSONResponse({"status": "error", "detail": "暂无可用的更新文件"}, status_code=404)
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    if not os.path.exists(file_path):
+        return JSONResponse({"status": "error", "detail": "更新文件不存在"}, status_code=404)
+    return FileResponse(
+        file_path,
+        media_type="application/octet-stream",
+        filename=filename,
+    )
+
+
+@app.get("/admin/api/update-info")
+async def admin_get_update_info(admin: dict = Depends(require_admin)):
+    """管理员获取当前版本信息"""
+    info = _load_version_info()
+    # 列出已上传的文件
+    files = []
+    for f in os.listdir(UPLOAD_DIR):
+        fp = os.path.join(UPLOAD_DIR, f)
+        if os.path.isfile(fp) and not f.endswith(".json"):
+            files.append({
+                "filename": f,
+                "size": os.path.getsize(fp),
+                "modified": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(fp))),
+            })
+    return JSONResponse({
+        "status": "success",
+        "current": info,
+        "files": files,
+    })
+
+
+@app.post("/admin/api/upload-exe")
+async def admin_upload_exe(
+    admin: dict = Depends(require_admin),
+    version: str = Form(""),
+    notes: str = Form(""),
+    file: UploadFile = File(...),
+):
+    """管理员上传新版本 exe"""
+    if not version:
+        return JSONResponse({"status": "error", "detail": "版本号不能为空"}, status_code=400)
+    
+    # 安全检查文件名
+    safe_name = os.path.basename(file.filename or "update.exe")
+    if not safe_name.endswith(".exe"):
+        safe_name += ".exe"
+    
+    # 限制文件大小 200MB
+    contents = await file.read()
+    if len(contents) > 200 * 1024 * 1024:
+        return JSONResponse({"status": "error", "detail": "文件大小超过 200MB 限制"}, status_code=400)
+    if len(contents) < 1_000_000:
+        return JSONResponse({"status": "error", "detail": "文件过小，可能不是有效的安装包"}, status_code=400)
+    
+    # 保存文件
+    file_path = os.path.join(UPLOAD_DIR, safe_name)
+    with open(file_path, "wb") as f:
+        f.write(contents)
+    
+    # 保存版本信息
+    info = {
+        "version": version,
+        "filename": safe_name,
+        "notes": notes,
+        "uploaded_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "size": len(contents),
+    }
+    _save_version_info(info)
+    
+    return JSONResponse({"status": "success", "info": info})
+
+
+@app.delete("/admin/api/update-info")
+async def admin_delete_update(admin: dict = Depends(require_admin)):
+    """管理员删除当前版本信息（不删文件）"""
+    _save_version_info({"version": "", "filename": "", "notes": "", "uploaded_at": "", "size": 0})
+    return JSONResponse({"status": "success"})
+
+
+@app.delete("/admin/api/update-file/{filename}")
+async def admin_delete_update_file(filename: str, admin: dict = Depends(require_admin)):
+    """管理员删除指定的更新文件"""
+    safe_name = os.path.basename(filename)
+    file_path = os.path.join(UPLOAD_DIR, safe_name)
+    if not os.path.exists(file_path):
+        return JSONResponse({"status": "error", "detail": "文件不存在"}, status_code=404)
+    os.remove(file_path)
+    # 如果删除的是当前版本文件，清空版本信息
+    info = _load_version_info()
+    if info.get("filename") == safe_name:
+        _save_version_info({"version": "", "filename": "", "notes": "", "uploaded_at": "", "size": 0})
+    return JSONResponse({"status": "success"})
+
 
 
 if __name__ == "__main__":

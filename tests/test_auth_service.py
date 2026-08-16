@@ -27,6 +27,11 @@ def client(tmp_path, monkeypatch):
     cfg_file = tmp_path / "auth_config.json"
     cfg_file.write_text(json.dumps(TEST_CONFIG, ensure_ascii=False), encoding="utf-8")
     monkeypatch.setattr(auth_service, "AUTH_CONFIG_FILE", str(cfg_file))
+    # 使用临时目录存放上传文件
+    tmp_updates = tmp_path / "updates"
+    tmp_updates.mkdir(exist_ok=True)
+    monkeypatch.setattr(auth_service, "UPLOAD_DIR", str(tmp_updates))
+    monkeypatch.setattr(auth_service, "VERSION_INFO_FILE", str(tmp_updates / "version_info.json"))
     ADMIN_SESSIONS.clear()
     auth_service.ACTIVE_LOGINS.clear()
     return TestClient(app)
@@ -834,3 +839,178 @@ def test_verify_user_ignores_login_token_field(client):
     resp = client.post("/verify-user", json={"username": "admin", "login_token": "wrong"},
                        headers={"X-Service-Token": "lx-internal-service-token"})
     assert resp.status_code == 200
+
+
+# ===================== 软件升级管理测试 =====================
+
+def test_update_check_no_version_set(client):
+    """未设置版本时返回空版本号"""
+    import auth_service; UPLOAD_DIR = auth_service.UPLOAD_DIR; VERSION_INFO_FILE = auth_service.VERSION_INFO_FILE
+    # 清理
+    if os.path.exists(VERSION_INFO_FILE):
+        os.remove(VERSION_INFO_FILE)
+    resp = client.get("/update/check", headers={"X-Service-Token": "lx-internal-service-token"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "success"
+    assert data["version"] == ""
+    assert data["has_file"] is False
+
+
+def test_update_check_requires_service_token(client):
+    """检查更新需要服务密钥"""
+    resp = client.get("/update/check")
+    assert resp.status_code == 401
+
+
+def test_update_download_no_file(client):
+    """无文件时下载返回 404"""
+    from auth_service import VERSION_INFO_FILE
+    if os.path.exists(VERSION_INFO_FILE):
+        os.remove(VERSION_INFO_FILE)
+    resp = client.get("/update/download", headers={"X-Service-Token": "lx-internal-service-token"})
+    assert resp.status_code == 404
+
+
+def test_update_download_requires_service_token(client):
+    """下载需要服务密钥"""
+    resp = client.get("/update/download")
+    assert resp.status_code == 401
+
+
+def test_admin_upload_exe_success(admin_client):
+    """管理员上传 exe 成功"""
+    import auth_service; UPLOAD_DIR = auth_service.UPLOAD_DIR; VERSION_INFO_FILE = auth_service.VERSION_INFO_FILE
+    # 准备一个假 exe（>1MB）
+    fake_exe = b"MZ" + b"\x00" * 1100000
+    resp = admin_client.post(
+        "/admin/api/upload-exe",
+        data={"version": "v9.9.9", "notes": "测试版本"},
+        files={"file": ("test_update.exe", fake_exe, "application/octet-stream")},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "success"
+    assert data["info"]["version"] == "v9.9.9"
+    assert data["info"]["filename"] == "test_update.exe"
+    assert data["info"]["size"] == len(fake_exe)
+    # 文件已保存
+    assert os.path.exists(os.path.join(UPLOAD_DIR, "test_update.exe"))
+    # 版本信息已写入
+    # 清理
+    if os.path.exists(os.path.join(UPLOAD_DIR, "test_update.exe")):
+        os.remove(os.path.join(UPLOAD_DIR, "test_update.exe"))
+    if os.path.exists(VERSION_INFO_FILE):
+        os.remove(VERSION_INFO_FILE)
+
+
+def test_admin_upload_exe_no_version(admin_client):
+    """上传不填版本号返回 400"""
+    fake_exe = b"MZ" + b"\x00" * 1100000
+    resp = admin_client.post(
+        "/admin/api/upload-exe",
+        data={"version": "", "notes": ""},
+        files={"file": ("test.exe", fake_exe, "application/octet-stream")},
+    )
+    assert resp.status_code == 400
+
+
+def test_admin_upload_exe_too_small(admin_client):
+    """上传过小文件返回 400"""
+    fake_exe = b"MZ" + b"\x00" * 100
+    resp = admin_client.post(
+        "/admin/api/upload-exe",
+        data={"version": "v1.0.0", "notes": ""},
+        files={"file": ("small.exe", fake_exe, "application/octet-stream")},
+    )
+    assert resp.status_code == 400
+
+
+def test_admin_upload_then_check_and_download(admin_client, client):
+    """完整流程：上传 → 检查 → 下载"""
+    import auth_service; UPLOAD_DIR = auth_service.UPLOAD_DIR; VERSION_INFO_FILE = auth_service.VERSION_INFO_FILE
+    fake_exe = b"MZ" + b"\x00" * 1100000
+    # 上传
+    admin_client.post(
+        "/admin/api/upload-exe",
+        data={"version": "v2.0.0", "notes": "完整流程测试"},
+        files={"file": ("flow_test.exe", fake_exe, "application/octet-stream")},
+    )
+    # 检查
+    resp = client.get("/update/check", headers={"X-Service-Token": "lx-internal-service-token"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["version"] == "v2.0.0"
+    assert data["has_file"] is True
+    assert data["notes"] == "完整流程测试"
+    # 下载
+    resp2 = client.get("/update/download", headers={"X-Service-Token": "lx-internal-service-token"})
+    assert resp2.status_code == 200
+    assert resp2.content == fake_exe
+    # 清理
+    if os.path.exists(os.path.join(UPLOAD_DIR, "flow_test.exe")):
+        os.remove(os.path.join(UPLOAD_DIR, "flow_test.exe"))
+    if os.path.exists(VERSION_INFO_FILE):
+        os.remove(VERSION_INFO_FILE)
+
+
+def test_admin_get_update_info(admin_client):
+    """管理员获取版本信息"""
+    from auth_service import VERSION_INFO_FILE
+    if os.path.exists(VERSION_INFO_FILE):
+        os.remove(VERSION_INFO_FILE)
+    resp = admin_client.get("/admin/api/update-info")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "current" in data
+    assert "files" in data
+
+
+def test_admin_delete_update_info(admin_client):
+    """管理员清除版本信息"""
+    from auth_service import VERSION_INFO_FILE
+    # 先设置一个
+    admin_client.post(
+        "/admin/api/upload-exe",
+        data={"version": "v3.0.0", "notes": "test"},
+        files={"file": ("del_test.exe", b"MZ" + b"\x00" * 1100000, "application/octet-stream")},
+    )
+    # 清除
+    resp = admin_client.delete("/admin/api/update-info")
+    assert resp.status_code == 200
+    # 验证已清除
+    info = json.loads(open(VERSION_INFO_FILE).read()) if os.path.exists(VERSION_INFO_FILE) else {}
+    assert info.get("version", "") == ""
+    # 清理文件
+    import auth_service; UPLOAD_DIR = auth_service.UPLOAD_DIR
+    fp = os.path.join(UPLOAD_DIR, "del_test.exe")
+    if os.path.exists(fp):
+        os.remove(fp)
+
+
+def test_admin_delete_update_file(admin_client):
+    """管理员删除指定更新文件"""
+    import auth_service; UPLOAD_DIR = auth_service.UPLOAD_DIR
+    fake_exe = b"MZ" + b"\x00" * 1100000
+    admin_client.post(
+        "/admin/api/upload-exe",
+        data={"version": "v4.0.0", "notes": ""},
+        files={"file": ("delfile.exe", fake_exe, "application/octet-stream")},
+    )
+    assert os.path.exists(os.path.join(UPLOAD_DIR, "delfile.exe"))
+    resp = admin_client.delete("/admin/api/update-file/delfile.exe")
+    assert resp.status_code == 200
+    assert not os.path.exists(os.path.join(UPLOAD_DIR, "delfile.exe"))
+
+
+def test_update_api_unauthenticated(client):
+    """未登录访问上传接口返回 401"""
+    resp = client.post(
+        "/admin/api/upload-exe",
+        data={"version": "v1.0.0", "notes": ""},
+        files={"file": ("test.exe", b"MZ" + b"\x00" * 1100000, "application/octet-stream")},
+    )
+    assert resp.status_code == 401
+
+
+import os

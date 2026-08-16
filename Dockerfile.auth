@@ -4,7 +4,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # 仅安装认证服务所需依赖（不需要 pywebview/openpyxl/xlrd）
-RUN pip install --no-cache-dir fastapi uvicorn[standard] httpx
+RUN pip install --no-cache-dir fastapi uvicorn[standard] httpx python-multipart
 
 # 复制代码和模板
 COPY auth_service.py .
