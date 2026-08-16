@@ -59,26 +59,26 @@ jobs:
 
       - name: 重命名 exe
         run: |
-          Rename-Item -Path "dist/LX.exe" -NewName "LX捞数据.exe"
+          Rename-Item -Path "dist/LX.exe" -NewName "LX捞数据-${{ steps.ver.outputs.tag }}.exe"
 
       - name: 上传 exe
         uses: actions/upload-artifact@v4
         with:
           name: LX捞数据-Windows
-          path: dist/LX捞数据.exe
+          path: dist/LX捞数据-${{ steps.ver.outputs.tag }}.exe
           retention-days: 30
 
       - name: 发布到 GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: dist/LX捞数据.exe
+          files: dist/LX捞数据-${{ steps.ver.outputs.tag }}.exe
           tag_name: ${{ steps.ver.outputs.tag }}
           name: ${{ steps.ver.outputs.tag }}
           body: |
             ## LX捞数据 ${{ steps.ver.outputs.tag }}
 
             ### 下载使用
-            1. 下载 `LX捞数据.exe`
+            1. 下载 `LX捞数据-${{ steps.ver.outputs.tag }}.exe`
             2. 双击运行，弹出桌面窗口
             3. 默认账号：admin / admin123
 
