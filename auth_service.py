@@ -1079,46 +1079,33 @@ async def admin_get_update_info(admin: dict = Depends(require_admin)):
     })
 
 
-@app.post("/admin/api/upload-exe")
-async def admin_upload_exe(
-    admin: dict = Depends(require_admin),
-    version: str = Form(""),
-    notes: str = Form(""),
-    platform: str = Form("windows"),
-    file: UploadFile = File(...),
-):
-    """管理员上传新版本安装包（支持 Windows .exe 和 macOS .zip）"""
+
+def _save_uploaded_exe(contents: bytes, filename: str, version: str, notes: str, platform: str) -> dict:
+    """保存上传的安装包并更新版本信息（供管理员上传和 CI 服务令牌上传复用）。"""
     if not version:
-        return JSONResponse({"status": "error", "detail": "版本号不能为空"}, status_code=400)
+        return {"status": "error", "detail": "版本号不能为空", "code": 400}
     if platform not in ("windows", "macos"):
         platform = "windows"
 
-    # 安全检查文件名
-    safe_name = os.path.basename(file.filename or "update")
-    # 根据平台验证扩展名
+    safe_name = os.path.basename(filename or "update")
     if platform == "windows":
         if not safe_name.lower().endswith(".exe"):
             safe_name += ".exe"
-    else:  # macos
+    else:
         if not safe_name.lower().endswith(".zip"):
             safe_name += ".zip"
 
-    # 限制文件大小 200MB
-    contents = await file.read()
     if len(contents) > 200 * 1024 * 1024:
-        return JSONResponse({"status": "error", "detail": "文件大小超过 200MB 限制"}, status_code=400)
+        return {"status": "error", "detail": "文件大小超过 200MB 限制", "code": 400}
     if len(contents) < 1_000_000:
-        return JSONResponse({"status": "error", "detail": "文件过小，可能不是有效的安装包"}, status_code=400)
+        return {"status": "error", "detail": "文件过小，可能不是有效的安装包", "code": 400}
 
-    # 计算文件 SHA256 哈希（用于下载后完整性校验）
     sha256_hash = hashlib.sha256(contents).hexdigest()
 
-    # 保存文件
     file_path = os.path.join(UPLOAD_DIR, safe_name)
     with open(file_path, "wb") as f:
         f.write(contents)
 
-    # 更新版本信息
     info = _load_version_info()
     info["version"] = version
     info["notes"] = notes
@@ -1131,8 +1118,40 @@ async def admin_upload_exe(
         "uploaded_at": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
     _save_version_info(info)
+    return {"status": "success", "info": info, "sha256": sha256_hash}
 
-    return JSONResponse({"status": "success", "info": info})
+
+@app.post("/admin/api/upload-exe")
+async def admin_upload_exe(
+    admin: dict = Depends(require_admin),
+    version: str = Form(""),
+    notes: str = Form(""),
+    platform: str = Form("windows"),
+    file: UploadFile = File(...),
+):
+    """管理员上传新版本安装包（支持 Windows .exe 和 macOS .zip）"""
+    contents = await file.read()
+    result = _save_uploaded_exe(contents, file.filename or "update", version, notes, platform)
+    code = result.pop("code", 200)
+    return JSONResponse(result, status_code=code)
+
+
+@app.post("/api/upload-update")
+async def ci_upload_update(
+    request: Request,
+    version: str = Form(""),
+    notes: str = Form(""),
+    platform: str = Form("windows"),
+    file: UploadFile = File(...),
+):
+    """CI/CD 服务令牌上传新版本安装包（无需管理员登录，仅需 X-Service-Token）。
+    供 GitHub Actions 在构建完成后自动上传产物到云端。"""
+    if not verify_service_token(request):
+        return JSONResponse({"status": "error", "detail": "未授权：缺少或错误的 X-Service-Token"}, status_code=401)
+    contents = await file.read()
+    result = _save_uploaded_exe(contents, file.filename or "update", version, notes, platform)
+    code = result.pop("code", 200)
+    return JSONResponse(result, status_code=code)
 
 
 @app.delete("/admin/api/update-info")

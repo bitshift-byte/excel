@@ -53,6 +53,7 @@ jobs:
           with open("updater.py", "w", encoding="utf-8") as f:
               f.write(t)
           print(f"Version set to: {tag}")
+
       - name: PyInstaller 打包
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed --name LX --icon icon.ico --collect-all webview --hidden-import updater --add-data "china_regions.json;." --add-data "templates;templates" --add-data "auth_config.example.json;." app.py
@@ -87,3 +88,34 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 上传到云端服务器（自动发版）
+        continue-on-error: true
+        env:
+          SERVICE_TOKEN: ${{ secrets.SERVICE_TOKEN }}
+          SERVER_URL: ${{ secrets.SERVER_URL }}
+        shell: bash
+        run: |
+          DEFAULT_URL="http://18.177.82.156:8001"
+          SERVER="${SERVER_URL:-$DEFAULT_URL}"
+          if [ -z "$SERVICE_TOKEN" ]; then
+            echo "⚠ SERVICE_TOKEN secret 未配置，跳过云端上传"
+            exit 0
+          fi
+          FILE="dist/LX捞数据-${{ steps.ver.outputs.tag }}.exe"
+          echo ">>> 上传 $FILE 到 $SERVER/api/upload-update ..."
+          HTTP_CODE=$(curl -s -o upload_resp.txt -w "%{http_code}" \
+            -X POST "$SERVER/api/upload-update" \
+            -H "X-Service-Token: $SERVICE_TOKEN" \
+            -F "version=${{ steps.ver.outputs.tag }}" \
+            -F "platform=windows" \
+            -F "notes=GitHub Actions 自动构建 ${{ steps.ver.outputs.tag }}" \
+            -F "file=@$FILE")
+          echo "HTTP $HTTP_CODE"
+          cat upload_resp.txt
+          echo ""
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✓ 云端发版成功"
+          else
+            echo "✗ 云端发版失败（HTTP $HTTP_CODE），但不阻塞 Release"
+          fi
