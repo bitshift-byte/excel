@@ -319,11 +319,19 @@ def match_row_province(row: dict, provinces: list) -> bool:
     return False
 
 
+
+def _excel_date(val):
+    """将 datetime 值转为 date-only，避免 Excel 显示时分秒"""
+    if isinstance(val, datetime.datetime):
+        return datetime.date(val.year, val.month, val.day)
+    return val
+
+
 def serialize_cell(val):
     if val is None:
         return ""
     if isinstance(val, datetime.datetime):
-        return val.strftime("%Y-%m-%d %H:%M:%S")
+        return val.strftime("%Y-%m-%d")
     if isinstance(val, datetime.date):
         return val.strftime("%Y-%m-%d")
     return str(val)
@@ -421,8 +429,8 @@ def build_pivot_by_delivery(filtered_rows: list) -> list:
                 "工厂": row.get("工厂", ""),
                 # Sheet4: 如果日期是文本(str) → 街道=None；如果是 datetime → 街道=原值
                 "街道": street_val if (fa_is_dt or jr_is_dt) else None,
-                "发货日期": fa_val if fa_is_dt else None,
-                "交货日期": jr_val if jr_is_dt else None,
+                "发货日期": datetime.date(fa_val.year, fa_val.month, fa_val.day) if fa_is_dt else None,
+                "交货日期": datetime.date(jr_val.year, jr_val.month, jr_val.day) if jr_is_dt else None,
                 "_交货量": 0.0,
                 "_总重量": 0.0,
                 "_业务量": 0.0,
@@ -803,12 +811,12 @@ def merge_files(
     ws1.title = "全量数据"
     ws1.append(output_headers)
     for row in aligned:
-        ws1.append([row.get(h, "") for h in all_columns])
+        ws1.append([_excel_date(row.get(h, "")) for h in all_columns])
 
     ws3 = wb.create_sheet("筛选数据")
     ws3.append(output_headers)
     for row in filtered:
-        ws3.append([row.get(h, "") for h in all_columns])
+        ws3.append([_excel_date(row.get(h, "")) for h in all_columns])
 
     p4_headers, p4_data, text_dates = build_pivot_by_delivery(filtered)
     ws4 = wb.create_sheet("交货汇总")

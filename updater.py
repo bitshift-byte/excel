@@ -30,7 +30,7 @@ import urllib.request
 import urllib.error
 
 # 当前版本（CI 打包时通过正则自动替换）
-APP_VERSION = "v1.3.7"
+APP_VERSION = "v1.3.8"
 
 # 文件路径
 PENDING_UPDATE_FILE = "pending_update.json"
