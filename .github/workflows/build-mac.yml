@@ -61,10 +61,23 @@ jobs:
         run: |
           pyinstaller --noconfirm --clean --windowed --name LX --icon icon.icns --collect-all webview --hidden-import updater --add-data "china_regions.json:." --add-data "templates:templates" --add-data "auth_config.example.json:." app.py
 
+      - name: 修复 macOS 签名和权限
+        run: |
+          # 对所有二进制文件执行 ad-hoc 签名（不签名 macOS 会拒绝运行）
+          find dist/LX.app -type f -name "*.so" -o -name "*.dylib" -o -type f -perm /111 | while read f; do
+            codesign --force --sign - "$f" 2>/dev/null || true
+          done
+          # 对主可执行文件签名
+          codesign --force --deep --sign - "dist/LX.app" 2>/dev/null || true
+          # 移除隔离属性（zip 解压后不会继承）
+          xattr -cr dist/LX.app 2>/dev/null || true
+          # 确保可执行文件有执行权限
+          chmod +x "dist/LX.app/Contents/MacOS/LX" 2>/dev/null || true
+
       - name: 打包为 zip
         run: |
           cd dist
-          zip -r "LX捞数据-macOS-${{ steps.ver.outputs.tag }}.zip" "LX.app"
+          zip -r -X "LX捞数据-macOS-${{ steps.ver.outputs.tag }}.zip" "LX.app"
 
       - name: 上传 artifact
         uses: actions/upload-artifact@v4
@@ -90,6 +103,8 @@ jobs:
             ### 注意事项
             - 此版本为 macOS (Apple Silicon) 版本
             - 自动升级功能支持 macOS
+            - 首次打开如果提示"无法验证开发者"，请到 系统设置→隐私与安全性 点击"仍要打开"
+            - 或在终端执行: xattr -cr /Applications/LX.app
           draft: false
           prerelease: false
         env:
