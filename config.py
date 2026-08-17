@@ -26,7 +26,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # ===================== Vue 前端构建产物 =====================
 
-VUE_DIST_DIR = os.path.join(_base_dir(), "dist_vue")
+# dist_vue 是只读资源：打包后在 sys._MEIPASS 临时目录，开发时为项目目录
+VUE_DIST_DIR = _resource_path("dist_vue")
 USE_VUE_FRONTEND = os.path.isdir(VUE_DIST_DIR)
 
 

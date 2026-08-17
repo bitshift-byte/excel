@@ -42,6 +42,17 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 构建前端
+        run: |
+          cd frontend
+          npm install
+          npm run build
+
       - name: 更新版本号
         shell: python
         run: |
@@ -56,7 +67,7 @@ jobs:
 
       - name: PyInstaller 打包
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name LX --icon icon.ico --collect-all webview --hidden-import updater --add-data "china_regions.json;." --add-data "templates;templates" --add-data "auth_config.example.json;." app.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name LX --icon icon.ico --collect-all webview --hidden-import updater --add-data "china_regions.json;." --add-data "templates;templates" --add-data "auth_config.example.json;." --add-data "dist_vue;dist_vue" app.py
 
       - name: 重命名 exe
         run: |
