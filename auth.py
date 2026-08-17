@@ -24,7 +24,7 @@ import state
 def load_users_from_auth_service() -> dict:
     """从远程认证服务加载用户列表"""
     try:
-        resp = httpx.post(
+        resp = httpx.get(
             f"{config.AUTH_SERVICE_URL}/users",
             headers={"X-Service-Token": config.get_service_token()},
             timeout=10,
@@ -53,9 +53,10 @@ def verify_user_status_with_auth_service(username: str) -> tuple:
         )
         if resp.status_code == 200:
             data = resp.json()
-            if data.get("enabled", True):
+            user = data.get("user", {})
+            if user.get("enabled", True):
                 return True, None
-            return False, data.get("reason", "账号已被禁用")
+            return False, "账号已被禁用"
         return False, "认证服务不可用"
     except Exception:
         # 认证服务不可用时，不阻断已有 session
@@ -66,15 +67,18 @@ def verify_user_status_with_auth_service(username: str) -> tuple:
 
 
 def fetch_app_config_from_auth_service() -> dict:
-    """从认证服务获取应用配置"""
+    """从认证服务获取应用配置。
+    认证服务返回 {"status": "success", "config": {...}}，
+    我们提取其中的 config 部分（含 mail_config, features, rules）。"""
     try:
-        resp = httpx.post(
+        resp = httpx.get(
             f"{config.AUTH_SERVICE_URL}/app-config",
             headers={"X-Service-Token": config.get_service_token()},
             timeout=10,
         )
         if resp.status_code == 200:
-            return resp.json()
+            data = resp.json()
+            return data.get("config", {})
     except Exception as e:
         print(f"[auth] 获取应用配置失败: {e}")
     return {}
