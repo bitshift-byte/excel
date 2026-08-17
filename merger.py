@@ -443,9 +443,9 @@ def build_pivot_by_delivery(filtered_rows: list) -> list:
         entry["_count"] += 1
 
     pivot_headers = [
-        "交货", "销售凭证", "运达方", "运达方的名字",
-        "送达方地点", "工厂", "街道", "发货日期", "交货日期",
-        "求和项:交货量", "求和项:总重量", "求和项:业务量",
+        "发货日期", "交货日期", "送达方地点", "运达方", "销售凭证",
+        "交货", "运达方的名字", "街道",
+        "求和项:交货量", "求和项:总重量", "求和项:业务量", "工厂",
     ]
     result = []
     total_jhl = 0.0
@@ -459,23 +459,23 @@ def build_pivot_by_delivery(filtered_rows: list) -> list:
         total_zzl += zzl
         total_ywl += ywl
         result.append([
-            entry["交货"],
-            entry["销售凭证"],
-            entry["运达方"],
-            entry["运达方的名字"],
-            entry["送达方地点"],
-            entry["工厂"],
-            entry["街道"],
             entry["发货日期"],
             entry["交货日期"],
+            entry["送达方地点"],
+            entry["运达方"],
+            entry["销售凭证"],
+            entry["交货"],
+            entry["运达方的名字"],
+            entry["街道"],
             jhl,
             zzl,
             ywl,
+            entry["工厂"],
         ])
     # 添加 "(空白)" 行
-    result.append(["(空白)", "(空白)", "(空白)", "(空白)", "(空白)", "(空白)", "(空白)", "(空白)", "(空白)", None, None, None])
+    result.append(["(空白)", "(空白)", "(空白)", "(空白)", "(空白)", "(空白)", "(空白)", "(空白)", None, None, None, "(空白)"])
     # 添加 "总计" 行
-    result.append(["总计", None, None, None, None, None, None, None, None, round(total_jhl, 3), round(total_zzl, 3), round(total_ywl, 3)])
+    result.append(["总计", None, None, None, None, None, None, None, round(total_jhl, 3), round(total_zzl, 3), round(total_ywl, 3), None])
     return pivot_headers, result, sheet3_orig
 
 
@@ -829,18 +829,23 @@ def merge_files(
     ws5.append(p5_headers)
     for row in p4_data:
         new_row = list(row)
-        delivery = str(new_row[0]).strip() if new_row[0] else ""
+        # 交货 在 index 5
+        delivery = str(new_row[5]).strip() if len(new_row) > 5 and new_row[5] else ""
         if delivery == "(空白)":
+            # 空白行的数值列清空
             if len(new_row) > 8:
                 new_row[8] = None
         elif delivery != "总计":
             orig = text_dates.get(delivery, {})
-            if len(new_row) > 7 and new_row[7] is None and orig.get("发货日期"):
-                new_row[7] = _format_date_text(orig["发货日期"])
-            if len(new_row) > 8 and new_row[8] is None and orig.get("交货日期"):
-                new_row[8] = _format_date_text(orig["交货日期"])
-            if len(new_row) > 6 and new_row[6] is None and orig.get("街道"):
-                new_row[6] = orig["街道"]
+            # 发货日期 在 index 0
+            if len(new_row) > 0 and new_row[0] is None and orig.get("发货日期"):
+                new_row[0] = _format_date_text(orig["发货日期"])
+            # 交货日期 在 index 1
+            if len(new_row) > 1 and new_row[1] is None and orig.get("交货日期"):
+                new_row[1] = _format_date_text(orig["交货日期"])
+            # 街道 在 index 7
+            if len(new_row) > 7 and new_row[7] is None and orig.get("街道"):
+                new_row[7] = orig["街道"]
         ws5.append(new_row)
 
     p2_headers, p2_data = build_pivot_by_factory_delivery(aligned)
