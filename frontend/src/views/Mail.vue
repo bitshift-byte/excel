@@ -373,7 +373,12 @@ async function loadTasks() {
 }
 
 function downloadFile(filename) {
-  window.open(mailApi.resultFile(filename), '_blank')
+  const a = document.createElement('a')
+  a.href = mailApi.resultFile(filename)
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
 }
 
 async function previewExcel(filename) {

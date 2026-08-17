@@ -592,7 +592,12 @@ async function processMerge() {
 }
 
 function downloadLatest() {
-  window.open(fileApi.download(), '_blank')
+  const a = document.createElement('a')
+  a.href = fileApi.download()
+  a.download = ''
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
 }
 
 function toggleProv(name) {
