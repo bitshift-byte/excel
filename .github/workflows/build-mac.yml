@@ -63,21 +63,35 @@ jobs:
 
       - name: 修复 macOS 签名和权限
         run: |
-          # 对所有二进制文件执行 ad-hoc 签名（不签名 macOS 会拒绝运行）
-          find dist/LX.app -type f -name "*.so" -o -name "*.dylib" -o -type f -perm /111 | while read f; do
+          # macOS 代码签名必须从内向外：先签名所有 .so/.dylib/可执行文件
+          find dist/LX.app -type f \( -name "*.so" -o -name "*.dylib" \) | while read f; do
             codesign --force --sign - "$f" 2>/dev/null || true
           done
-          # 对主可执行文件签名
+          # 签名所有可执行文件
+          find dist/LX.app -type f -perm /111 | while read f; do
+            codesign --force --sign - "$f" 2>/dev/null || true
+          done
+          # 签名嵌套的 framework（从内向外）
+          find dist/LX.app -name "*.framework" -type d | sort -r | while read fw; do
+            codesign --force --sign - "$fw" 2>/dev/null || true
+          done
+          # 最后签名整个 .app bundle（--deep 会递归验证嵌套签名）
           codesign --force --deep --sign - "dist/LX.app" 2>/dev/null || true
-          # 移除隔离属性（zip 解压后不会继承）
+          # 验证签名
+          codesign --verify --deep --strict "dist/LX.app" 2>&1 || echo "签名验证有警告（不影响运行）"
+          # 移除隔离属性
           xattr -cr dist/LX.app 2>/dev/null || true
           # 确保可执行文件有执行权限
           chmod +x "dist/LX.app/Contents/MacOS/LX" 2>/dev/null || true
+          # 设置 Info.plist 版本号
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.ver.outputs.tag }}" "dist/LX.app/Contents/Info.plist" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ steps.ver.outputs.tag }}" "dist/LX.app/Contents/Info.plist" 2>/dev/null || true
 
-      - name: 打包为 zip
+      - name: 打包为 zip（使用 ditto 保留元数据）
         run: |
           cd dist
-          zip -r -X "LX捞数据-macOS-${{ steps.ver.outputs.tag }}.zip" "LX.app"
+          # 使用 ditto 而不是 zip，ditto 不会添加 com.apple.provenance 属性
+          ditto -c -k --keepParent "LX.app" "LX捞数据-macOS-${{ steps.ver.outputs.tag }}.zip"
 
       - name: 上传 artifact
         uses: actions/upload-artifact@v4
@@ -103,8 +117,11 @@ jobs:
             ### 注意事项
             - 此版本为 macOS (Apple Silicon) 版本
             - 自动升级功能支持 macOS
-            - 首次打开如果提示"无法验证开发者"，请到 系统设置→隐私与安全性 点击"仍要打开"
-            - 或在终端执行: xattr -cr /Applications/LX.app
+            - 首次打开如果提示"无法验证开发者"或"无法打开"：
+              1. 打开终端（Terminal）
+              2. 执行: xattr -cr /path/to/LX.app （把路径替换为实际解压路径）
+              3. 再双击 LX.app 即可打开
+            - 或者右键点击 LX.app → 选择"打开" → 点击"打开"
           draft: false
           prerelease: false
         env:
