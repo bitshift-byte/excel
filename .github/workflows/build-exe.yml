@@ -98,24 +98,43 @@ jobs:
         run: |
           DEFAULT_URL="http://18.177.82.156:8001"
           SERVER="${SERVER_URL:-$DEFAULT_URL}"
+          TAG="${{ steps.ver.outputs.tag }}"
+
+          echo "=== 云端发版 ==="
+          echo "版本: $TAG"
+          echo "服务器: $SERVER"
+          echo "SERVICE_TOKEN 长度: ${#SERVICE_TOKEN}"
+
           if [ -z "$SERVICE_TOKEN" ]; then
-            echo "⚠ SERVICE_TOKEN secret 未配置，跳过云端上传"
+            echo "❌ SERVICE_TOKEN secret 未配置！"
+            echo "请在 GitHub 仓库 Settings → Secrets → Actions 中添加 SERVICE_TOKEN"
             exit 0
           fi
-          FILE="dist/LX捞数据-${{ steps.ver.outputs.tag }}.exe"
-          echo ">>> 上传 $FILE 到 $SERVER/api/upload-update ..."
-          HTTP_CODE=$(curl -s -o upload_resp.txt -w "%{http_code}" \
+
+          # 复制为 ASCII 文件名，避免中文编码问题
+          SRC_FILE="dist/LX捞数据-${TAG}.exe"
+          UPLOAD_FILE="dist/LX-Windows-${TAG}.exe"
+          cp "$SRC_FILE" "$UPLOAD_FILE"
+
+          echo ">>> 上传 $UPLOAD_FILE ($(wc -c < "$UPLOAD_FILE") bytes) 到 $SERVER/api/upload-update ..."
+
+          HTTP_CODE=$(curl -s -o /tmp/upload_resp.txt -w "%{http_code}" \
+            --connect-timeout 30 \
+            --max-time 300 \
             -X POST "$SERVER/api/upload-update" \
             -H "X-Service-Token: $SERVICE_TOKEN" \
-            -F "version=${{ steps.ver.outputs.tag }}" \
+            -F "version=${TAG}" \
             -F "platform=windows" \
-            -F "notes=GitHub Actions 自动构建 ${{ steps.ver.outputs.tag }}" \
-            -F "file=@$FILE")
-          echo "HTTP $HTTP_CODE"
-          cat upload_resp.txt
+            -F "notes=GitHub Actions CI auto build ${TAG}" \
+            -F "file=@${UPLOAD_FILE}")
+
+          echo "HTTP 响应码: $HTTP_CODE"
+          echo "服务器返回:"
+          cat /tmp/upload_resp.txt
           echo ""
+
           if [ "$HTTP_CODE" = "200" ]; then
-            echo "✓ 云端发版成功"
+            echo "✅ 云端发版成功！桌面端可自动检查更新。"
           else
-            echo "✗ 云端发版失败（HTTP $HTTP_CODE），但不阻塞 Release"
+            echo "❌ 云端发版失败（HTTP $HTTP_CODE）"
           fi

@@ -28,7 +28,6 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "tag=${{ inputs.version }}" >> $GITHUB_OUTPUT
           else
-            # 去掉 mac- 前缀
             TAG="${GITHUB_REF#refs/tags/}"
             TAG="${TAG#mac-}"
             echo "tag=$TAG" >> $GITHUB_OUTPUT
@@ -63,34 +62,25 @@ jobs:
 
       - name: 修复 macOS 签名和权限
         run: |
-          # macOS 代码签名必须从内向外：先签名所有 .so/.dylib/可执行文件
           find dist/LX.app -type f \( -name "*.so" -o -name "*.dylib" \) | while read f; do
             codesign --force --sign - "$f" 2>/dev/null || true
           done
-          # 签名所有可执行文件
           find dist/LX.app -type f -perm /111 | while read f; do
             codesign --force --sign - "$f" 2>/dev/null || true
           done
-          # 签名嵌套的 framework（从内向外）
           find dist/LX.app -name "*.framework" -type d | sort -r | while read fw; do
             codesign --force --sign - "$fw" 2>/dev/null || true
           done
-          # 最后签名整个 .app bundle（--deep 会递归验证嵌套签名）
           codesign --force --deep --sign - "dist/LX.app" 2>/dev/null || true
-          # 验证签名
           codesign --verify --deep --strict "dist/LX.app" 2>&1 || echo "签名验证有警告（不影响运行）"
-          # 移除隔离属性
           xattr -cr dist/LX.app 2>/dev/null || true
-          # 确保可执行文件有执行权限
           chmod +x "dist/LX.app/Contents/MacOS/LX" 2>/dev/null || true
-          # 设置 Info.plist 版本号
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.ver.outputs.tag }}" "dist/LX.app/Contents/Info.plist" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ steps.ver.outputs.tag }}" "dist/LX.app/Contents/Info.plist" 2>/dev/null || true
 
       - name: 打包为 zip（使用 ditto 保留元数据）
         run: |
           cd dist
-          # 使用 ditto 而不是 zip，ditto 不会添加 com.apple.provenance 属性
           ditto -c -k --keepParent "LX.app" "LX捞数据-macOS-${{ steps.ver.outputs.tag }}.zip"
 
       - name: 上传 artifact
@@ -135,24 +125,43 @@ jobs:
         run: |
           DEFAULT_URL="http://18.177.82.156:8001"
           SERVER="${SERVER_URL:-$DEFAULT_URL}"
+          TAG="${{ steps.ver.outputs.tag }}"
+
+          echo "=== 云端发版 ==="
+          echo "版本: $TAG"
+          echo "服务器: $SERVER"
+          echo "SERVICE_TOKEN 长度: ${#SERVICE_TOKEN}"
+
           if [ -z "$SERVICE_TOKEN" ]; then
-            echo "⚠ SERVICE_TOKEN secret 未配置，跳过云端上传"
+            echo "❌ SERVICE_TOKEN secret 未配置！"
+            echo "请在 GitHub 仓库 Settings → Secrets → Actions 中添加 SERVICE_TOKEN"
             exit 0
           fi
-          FILE="dist/LX捞数据-macOS-${{ steps.ver.outputs.tag }}.zip"
-          echo ">>> 上传 $FILE 到 $SERVER/api/upload-update ..."
-          HTTP_CODE=$(curl -s -o upload_resp.txt -w "%{http_code}" \
+
+          # 复制为 ASCII 文件名，避免中文编码问题
+          SRC_FILE="dist/LX捞数据-macOS-${TAG}.zip"
+          UPLOAD_FILE="dist/LX-macOS-${TAG}.zip"
+          cp "$SRC_FILE" "$UPLOAD_FILE"
+
+          echo ">>> 上传 $UPLOAD_FILE ($(wc -c < "$UPLOAD_FILE") bytes) 到 $SERVER/api/upload-update ..."
+
+          HTTP_CODE=$(curl -s -o /tmp/upload_resp.txt -w "%{http_code}" \
+            --connect-timeout 30 \
+            --max-time 300 \
             -X POST "$SERVER/api/upload-update" \
             -H "X-Service-Token: $SERVICE_TOKEN" \
-            -F "version=${{ steps.ver.outputs.tag }}" \
+            -F "version=${TAG}" \
             -F "platform=macos" \
-            -F "notes=GitHub Actions 自动构建 ${{ steps.ver.outputs.tag }}" \
-            -F "file=@$FILE")
-          echo "HTTP $HTTP_CODE"
-          cat upload_resp.txt
+            -F "notes=GitHub Actions CI auto build ${TAG}" \
+            -F "file=@${UPLOAD_FILE}")
+
+          echo "HTTP 响应码: $HTTP_CODE"
+          echo "服务器返回:"
+          cat /tmp/upload_resp.txt
           echo ""
+
           if [ "$HTTP_CODE" = "200" ]; then
-            echo "✓ 云端发版成功"
+            echo "✅ 云端发版成功！桌面端可自动检查更新。"
           else
-            echo "✗ 云端发版失败（HTTP $HTTP_CODE），但不阻塞 Release"
+            echo "❌ 云端发版失败（HTTP $HTTP_CODE）"
           fi
