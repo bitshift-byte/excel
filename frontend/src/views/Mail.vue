@@ -405,9 +405,14 @@ async function confirmRun() {
   running.value = true
   message.loading('正在执行，可能需要几十秒...', { duration: 5000 })
   try {
-    const dateStr = runDate.value
-      ? new Date(runDate.value).toISOString().slice(0, 10)
-      : ''
+    let dateStr = ''
+    if (runDate.value) {
+      const d = new Date(runDate.value)
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      dateStr = `${y}-${m}-${day}`
+    }
     const data = await mailApi.run(dateStr)
     if (data.status === 'success') {
       message.success(`执行完成，处理 ${data.handled} 封邮件`)
