@@ -30,7 +30,7 @@ import urllib.request
 import urllib.error
 
 # 当前版本（CI 打包时通过正则自动替换）
-APP_VERSION = "v1.3.3"
+APP_VERSION = "v1.3.7"
 
 # 文件路径
 PENDING_UPDATE_FILE = "pending_update.json"
@@ -528,6 +528,15 @@ def _apply_macos_update(pending: dict) -> bool:
 
     sh_content = f"""#!/bin/bash
 # LX macOS Auto Update Script
+LOG_FILE="{temp_dir}/lx_update.log"
+exec >> "$LOG_FILE" 2>&1
+echo "========================================"
+echo "[LX Update] Started at $(date)"
+echo "[LX Update] PID={pid}"
+echo "[LX Update] App bundle: {app_bundle}"
+echo "[LX Update] New zip: {new_zip}"
+echo "[LX Update] Backup: {backup_bundle}"
+
 echo "[LX Update] Waiting for app to exit..."
 WAIT_COUNT=0
 while kill -0 {pid} 2>/dev/null; do
@@ -540,27 +549,36 @@ while kill -0 {pid} 2>/dev/null; do
         break
     fi
 done
+echo "[LX Update] App exited after $WAIT_COUNT seconds"
+
 echo "[LX Update] Backing up old version..."
 rm -rf "{backup_bundle}"
-cp -R "{app_bundle}" "{backup_bundle}"
+ditto "{app_bundle}" "{backup_bundle}"
 BACKUP_OK=$?
 if [ $BACKUP_OK -ne 0 ]; then
     echo "[LX Update] Backup failed, aborting"
     open "{app_bundle}"
     exit 1
 fi
-echo "[LX Update] Extracting new version..."
+echo "[LX Update] Backup OK"
+
+echo "[LX Update] Extracting new version with ditto..."
 UNZIP_DIR="{temp_dir}/LX_update_extract"
 rm -rf "$UNZIP_DIR"
 mkdir -p "$UNZIP_DIR"
-cd "$UNZIP_DIR"
-unzip -o "{new_zip}" -d "$UNZIP_DIR" 2>/dev/null
+ditto -x -k "{new_zip}" "$UNZIP_DIR"
 if [ $? -ne 0 ]; then
-    echo "[LX Update] Unzip failed, restoring old version"
-    rm -rf "$UNZIP_DIR"
-    open "{app_bundle}"
-    exit 1
+    echo "[LX Update] ditto extract failed, trying unzip as fallback..."
+    unzip -o "{new_zip}" -d "$UNZIP_DIR" 2>&1
+    if [ $? -ne 0 ]; then
+        echo "[LX Update] Both extraction methods failed, restoring old version"
+        rm -rf "$UNZIP_DIR"
+        open "{app_bundle}"
+        exit 1
+    fi
 fi
+echo "[LX Update] Extraction OK"
+
 NEW_APP=$(find "$UNZIP_DIR" -maxdepth 2 -name "*.app" -type d | head -1)
 if [ -z "$NEW_APP" ]; then
     echo "[LX Update] No .app found in archive, restoring old version"
@@ -568,33 +586,76 @@ if [ -z "$NEW_APP" ]; then
     open "{app_bundle}"
     exit 1
 fi
-echo "[LX Update] Installing new version..."
+echo "[LX Update] Found new app: $NEW_APP"
+
+echo "[LX Update] Removing old version..."
 rm -rf "{app_bundle}"
-cp -R "$NEW_APP" "{app_bundle}"
+if [ -d "{app_bundle}" ]; then
+    echo "[LX Update] Warning: old app still exists, trying force remove..."
+    rm -rf "{app_bundle}" 2>/dev/null
+fi
+
+echo "[LX Update] Installing new version with ditto..."
+ditto "$NEW_APP" "{app_bundle}"
 INSTALL_OK=$?
+if [ $INSTALL_OK -ne 0 ]; then
+    echo "[LX Update] ditto install failed, trying cp -R..."
+    cp -R "$NEW_APP" "{app_bundle}"
+    INSTALL_OK=$?
+fi
 if [ $INSTALL_OK -ne 0 ]; then
     echo "[LX Update] Install failed, restoring from backup..."
     rm -rf "{app_bundle}"
-    cp -R "{backup_bundle}" "{app_bundle}"
+    ditto "{backup_bundle}" "{app_bundle}"
     open "{app_bundle}"
     rm -rf "$UNZIP_DIR"
     exit 1
 fi
+echo "[LX Update] Install OK"
+
 # Verify new app exists
 if [ ! -d "{app_bundle}" ]; then
     echo "[LX Update] New app missing! Restoring from backup..."
-    cp -R "{backup_bundle}" "{app_bundle}"
+    ditto "{backup_bundle}" "{app_bundle}"
 fi
+
+# Fix executable permissions
+chmod +x "{app_bundle}/Contents/MacOS/LX" 2>/dev/null
+echo "[LX Update] Fixed executable permissions"
+
+# Clear quarantine / extended attributes
+xattr -cr "{app_bundle}" 2>/dev/null
+echo "[LX Update] Cleared extended attributes"
+
+# Re-apply ad-hoc code signing (from inner to outer)
+echo "[LX Update] Re-signing app..."
+find "{app_bundle}" -type f \\( -name "*.so" -o -name "*.dylib" \\) -exec codesign --force --sign - {{}} \\; 2>/dev/null
+find "{app_bundle}" -type f -perm /111 -exec codesign --force --sign - {{}} \\; 2>/dev/null
+find "{app_bundle}" -name "*.framework" -type d | sort -r | while read fw; do
+    codesign --force --sign - "$fw" 2>/dev/null
+done
+codesign --force --deep --sign - "{app_bundle}" 2>/dev/null
+echo "[LX Update] Re-signing complete"
+
+# Verify
+codesign --verify --deep --strict "{app_bundle}" 2>&1 || echo "[LX Update] Code signing verification has warnings (may still work)"
+
 # Cleanup
 rm -rf "$UNZIP_DIR"
 rm -f "{new_zip}"
 rm -f "{_pending_path()}"
+echo "[LX Update] Cleanup done"
+
 echo "[LX Update] Starting new version..."
 open "{app_bundle}"
+echo "[LX Update] App launched, waiting 10 seconds before cleanup..."
+
 # Clean up backup and script after delay
-sleep 5
+sleep 10
 rm -rf "{backup_bundle}"
 rm -f "$0"
+echo "[LX Update] Done at $(date)"
+echo "========================================"
 """
     with open(sh_path, "w", encoding="utf-8") as f:
         f.write(sh_content)
