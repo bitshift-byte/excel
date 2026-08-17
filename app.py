@@ -785,13 +785,25 @@ if __name__ == "__main__":
     # 桌面窗口模式（开发时直接运行、打包后双击运行都走这里）
     import webview
 
-    # ── 无感升级：后台静默检查并下载新版本（3 秒后执行）──
+    # ── 无感升级：后台静默检查并下载新版本（5 秒后执行）──
+    _update_status = {"checking": False, "last_result": None}
+
     def _silent_update_check():
-        time.sleep(3)
+        time.sleep(5)
+        _update_status["checking"] = True
         try:
-            updater.check_and_download_update()
+            result = updater.check_and_download_update()
+            _update_status["last_result"] = result
+            if result.get("has_update") and not result.get("error"):
+                _to_version = result.get("latest", "")
+                print(f"[updater] 新版本 {_to_version} 已下载，将在下次启动时自动升级")
+            elif result.get("has_update") and result.get("already_downloaded"):
+                print(f"[updater] 新版本已下载，等待重启应用")
         except Exception as e:
             print(f"[updater] 静默检查失败: {e}")
+            _update_status["last_result"] = {"has_update": False, "error": str(e)}
+        finally:
+            _update_status["checking"] = False
 
     threading.Thread(target=_silent_update_check, daemon=True).start()
 
@@ -840,6 +852,27 @@ if __name__ == "__main__":
             """返回当前版本号"""
             import updater
             return updater.get_current_version()
+
+        def get_update_status(self):
+            """返回后台静默检查的状态"""
+            return _update_status
+
+        def has_pending_update(self):
+            """是否有待应用的更新（下次启动时生效）"""
+            import updater
+            return updater.has_pending_update()
+
+        def get_update_log(self):
+            """读取更新日志"""
+            import os
+            try:
+                log_path = os.path.join(updater._data_dir(), updater.UPDATE_LOG_FILE)
+                if os.path.exists(log_path):
+                    with open(log_path, "r", encoding="utf-8") as f:
+                        return f.read()
+            except Exception:
+                pass
+            return ""
 
     # 启动主应用服务
     def _run_server():

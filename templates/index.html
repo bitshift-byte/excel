@@ -98,6 +98,7 @@
         <button id="checkUpdateBtn" onclick="checkUpdate()" style="background:none;border:none;color:var(--text-4);cursor:pointer;font-size:11px;padding:2px 4px" title="检查更新">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
         </button>
+        <span id="updateBadge" style="display:none;background:var(--primary);color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;cursor:pointer" onclick="checkUpdate()" title="有新版本可用">新版本</span>
       </div>
     </div>
   </aside>
@@ -1254,17 +1255,23 @@ async function checkUpdate(){
   var btn=document.getElementById('checkUpdateBtn');
   btn.style.opacity='0.5';
   btn.disabled=true;
+  document.getElementById('updateBadge').style.display='none';
   try{
     var result=await window.pywebview.api.check_update();
     if(result&&result.has_update){
-      var msg='发现新版本 '+result.latest+'！\n\n'+(result.body||'')+'\n\n是否立即下载升级？下载完成后将在下次启动时自动应用。';
+      var msg='发现新版本 '+result.latest+'！\n\n'+(result.body||'')+'\n\n是否立即下载升级？\n下载完成后将在下次启动时自动应用。';
       if(confirm(msg)){
+        toast('正在下载新版本，请稍候...','info');
         var dlResult=await window.pywebview.api.do_update();
         if(dlResult&&dlResult.error){
           toast('下载失败: '+dlResult.error,'error');
+        }else if(dlResult&&dlResult.already_downloaded){
+          toast('新版本已下载，请重启应用完成升级','info');
         }else{
-          toast('新版本已下载，将在下次启动时自动升级');
+          toast('新版本已下载，请重启应用完成升级','success');
         }
+      }else{
+        document.getElementById('updateBadge').style.display='inline-block';
       }
     }else if(result&&result.error){
       toast('检查更新失败: '+result.error,'error');
@@ -1272,11 +1279,39 @@ async function checkUpdate(){
       toast('当前已是最新版本');
     }
   }catch(e){
-    toast('检查更新失败','error');
+    toast('检查更新失败: '+e.message,'error');
   }finally{
     btn.style.opacity='';
     btn.disabled=false;
   }
+}
+
+// 启动后检查后台静默更新结果
+async function checkSilentUpdateResult(){
+  try{
+    var status=await window.pywebview.api.get_update_status();
+    if(!status||!status.last_result)return;
+    var r=status.last_result;
+    if(r.has_update&&!r.error){
+      document.getElementById('updateBadge').style.display='inline-block';
+      document.getElementById('updateBadge').title='新版本 '+r.latest+' 已下载，重启生效';
+    }else if(r.has_update&&r.error){
+      document.getElementById('updateBadge').style.display='inline-block';
+      document.getElementById('updateBadge').title='有新版本可用';
+    }
+  }catch(e){}
+}
+
+// 检查是否有待应用的更新（已下载，等待重启）
+async function checkPendingUpdate(){
+  try{
+    var pending=await window.pywebview.api.has_pending_update();
+    if(pending){
+      document.getElementById('updateBadge').style.display='inline-block';
+      document.getElementById('updateBadge').title='新版本已下载，请重启应用完成升级';
+      document.getElementById('updateBadge').textContent='待重启';
+    }
+  }catch(e){}
 }
 
 async function loadVersion(){
@@ -1284,6 +1319,8 @@ async function loadVersion(){
     var v=await window.pywebview.api.get_version();
     if(v)document.getElementById('versionText').textContent=v;
   }catch(e){}
+  checkPendingUpdate();
+  setTimeout(checkSilentUpdateResult,8000);
 }
 
 

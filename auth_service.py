@@ -1022,6 +1022,7 @@ async def update_check(request: Request):
         "notes": info.get("notes", ""),
         "uploaded_at": pf.get("uploaded_at", ""),
         "size": pf.get("size", 0),
+        "sha256": pf.get("sha256", ""),
         "platform": platform,
         "has_file": has_file,
     })
@@ -1109,6 +1110,9 @@ async def admin_upload_exe(
     if len(contents) < 1_000_000:
         return JSONResponse({"status": "error", "detail": "文件过小，可能不是有效的安装包"}, status_code=400)
 
+    # 计算文件 SHA256 哈希（用于下载后完整性校验）
+    sha256_hash = hashlib.sha256(contents).hexdigest()
+
     # 保存文件
     file_path = os.path.join(UPLOAD_DIR, safe_name)
     with open(file_path, "wb") as f:
@@ -1123,6 +1127,7 @@ async def admin_upload_exe(
     info["platforms"][platform] = {
         "filename": safe_name,
         "size": len(contents),
+        "sha256": sha256_hash,
         "uploaded_at": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
     _save_version_info(info)
