@@ -1314,11 +1314,19 @@ async function checkPendingUpdate(){
   }catch(e){}
 }
 
-async function loadVersion(){
+async function loadVersion(retries){
+  retries=retries||0;
   try{
+    if(!window.pywebview||!window.pywebview.api){
+      if(retries<20){setTimeout(function(){loadVersion(retries+1)},300);return}
+      return;
+    }
     var v=await window.pywebview.api.get_version();
-    if(v)document.getElementById('versionText').textContent=v;
-  }catch(e){}
+    if(v){document.getElementById('versionText').textContent=v;}
+    else if(retries<20){setTimeout(function(){loadVersion(retries+1)},300);return}
+  }catch(e){
+    if(retries<20){setTimeout(function(){loadVersion(retries+1)},300);return}
+  }
   checkPendingUpdate();
   setTimeout(checkSilentUpdateResult,8000);
 }
