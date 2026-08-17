@@ -12,3 +12,18 @@ dist/
 *.spec
 venv_build/
 *.bak
+
+# Build artifacts
+dist_vue/
+node_modules/
+
+# Screenshots
+screenshot_*.png
+
+# Superpowers docs
+docs/superpowers/
+
+# Temp files
+/tmp/
+*.log
+frontend/login-preview.png

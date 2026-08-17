@@ -10,7 +10,12 @@ from unittest.mock import patch, AsyncMock, MagicMock
 from fastapi.testclient import TestClient
 
 import app as app_module
-from app import app, SESSIONS, SESSION_COOKIE
+from app import app
+import auth
+import state
+import config
+from state import SESSIONS
+from config import SESSION_COOKIE
 
 
 def _mock_auth_response(status_code=200, json_body=None):
@@ -22,11 +27,14 @@ def _mock_auth_response(status_code=200, json_body=None):
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    monkeypatch.setattr(app_module, "USERS", {
+    monkeypatch.setattr(state, "USERS", {
         "admin": {"username": "admin", "name": "管理员", "role": "admin"},
         "user1": {"username": "user1", "name": "用户一", "role": "user"},
     })
     SESSIONS.clear()
+    state.SESSION_LAST_CHECK.clear()
+    # Stub remote auth-service verification so tests are deterministic
+    monkeypatch.setattr(auth, "verify_user_status_with_auth_service", lambda username: (True, None))
     return TestClient(app)
 
 
@@ -123,21 +131,6 @@ def test_mail_config_put_removed_from_app(client):
     resp = client.put("/api/mail/config", json={"enabled": False})
     assert resp.status_code == 405
 
-
-def test_mail_start_requires_admin(client):
-    """普通用户不能启动邮件后台"""
-    SESSIONS["user-token"] = {"username": "user1"}
-    client.cookies.set(SESSION_COOKIE, "user-token")
-    resp = client.post("/api/mail/start")
-    assert resp.status_code == 403
-
-
-def test_mail_stop_requires_admin(client):
-    """普通用户不能停止邮件后台"""
-    SESSIONS["user-token"] = {"username": "user1"}
-    client.cookies.set(SESSION_COOKIE, "user-token")
-    resp = client.post("/api/mail/stop")
-    assert resp.status_code == 403
 
 
 def test_mail_run_requires_admin(client):

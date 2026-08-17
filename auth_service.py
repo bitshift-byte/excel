@@ -154,6 +154,8 @@ DEFAULT_APP_CONFIG = {
         "rule_management": True, # 规则管理（桌面端是否可查看规则）
     },
     "rules": [],  # 内置规则在 load_app_config() 中自动注入，不写入默认配置
+    "user_rules": {},  # username -> [rule_id] 规则分配映射
+    "user_provinces": {},  # username -> [省份名] 省份分配映射
 }
 
 PASSWORD_SALT = os.environ.get("PASSWORD_SALT", "excel-merger-salt")
@@ -573,6 +575,49 @@ async def get_app_config(request: Request):
     return JSONResponse({"status": "success", "config": public_app_config(cfg)})
 
 
+@app.post("/rules")
+async def service_get_rules(request: Request):
+    """供桌面应用获取规则列表（按用户隔离）— 需要服务密钥。
+    接收 {username}，返回该用户分配的规则 + 内置规则。"""
+    if not verify_service_token(request):
+        return JSONResponse({"status": "error", "detail": "未授权"}, status_code=401)
+
+    body = await request.json()
+    username = body.get("username", "").strip()
+    if not username:
+        return JSONResponse({"status": "error", "detail": "用户名不能为空"}, status_code=400)
+
+    cfg = load_app_config()
+    all_rules = cfg.get("rules", [])
+    user_rule_ids = set(cfg.get("user_rules", {}).get(username, []))
+
+    # 内置规则始终可见 + 分配给该用户的规则
+    builtin_rules = [r for r in all_rules if r.get("builtin") or r.get("id") == "_builtin_default"]
+    user_rules = [r for r in all_rules if r.get("id") in user_rule_ids and not r.get("builtin")]
+    result = builtin_rules + user_rules
+
+    return JSONResponse({"status": "success", "rules": result})
+
+
+
+
+@app.post("/user-config")
+async def service_get_user_config(request: Request):
+    """供桌面应用获取用户特定配置（省份）— 需要服务密钥。
+    接收 {username}，返回该用户分配的省份列表。"""
+    if not verify_service_token(request):
+        return JSONResponse({"status": "error", "detail": "未授权"}, status_code=401)
+
+    body = await request.json()
+    username = body.get("username", "").strip()
+    if not username:
+        return JSONResponse({"status": "error", "detail": "用户名不能为空"}, status_code=400)
+
+    cfg = load_app_config()
+    user_provinces = cfg.get("user_provinces", {}).get(username, [])
+
+    return JSONResponse({"status": "success", "provinces": user_provinces})
+
 # ===================== 管理后台页面路由 =====================
 
 @app.get("/admin")
@@ -854,6 +899,69 @@ async def admin_update_user_features(username: str, request: Request, admin: dic
     return JSONResponse({"status": "success", "features": user_features})
 
 
+# ===================== 管理后台 API — 用户规则分配 =====================
+
+@app.get("/admin/api/users/{username}/rules")
+async def admin_get_user_rules(username: str, admin: dict = Depends(require_admin)):
+    """获取分配给指定用户的规则 ID 列表"""
+    cfg = load_app_config()
+    user_rule_ids = cfg.get("user_rules", {}).get(username, [])
+    return JSONResponse({"status": "success", "rule_ids": user_rule_ids})
+
+
+@app.put("/admin/api/users/{username}/rules")
+async def admin_assign_user_rules(username: str, request: Request, admin: dict = Depends(require_admin)):
+    """管理员为用户分配规则。body: {"rule_ids": ["r_abc", "r_def"]}"""
+    # 验证用户存在
+    auth_cfg = load_config()
+    user = find_user(username, auth_cfg)
+    if not user:
+        raise HTTPExceptionLite(404, "用户不存在")
+
+    body = await request.json()
+    rule_ids = body.get("rule_ids", [])
+
+    # 过滤掉内置规则 ID（不允许分配内置规则，它始终可见）
+    rule_ids = [rid for rid in rule_ids if rid != "_builtin_default"]
+
+    cfg = load_app_config()
+    user_rules_map = cfg.get("user_rules", {})
+    user_rules_map[username] = rule_ids
+    cfg["user_rules"] = user_rules_map
+    save_app_config(cfg)
+    return JSONResponse({"status": "success", "rule_ids": rule_ids})
+
+
+# ===================== 管理后台 API — 用户省份分配 =====================
+
+@app.get("/admin/api/users/{username}/provinces")
+async def admin_get_user_provinces(username: str, admin: dict = Depends(require_admin)):
+    """获取分配给指定用户的省份列表"""
+    cfg = load_app_config()
+    user_provinces = cfg.get("user_provinces", {}).get(username, [])
+    return JSONResponse({"status": "success", "provinces": user_provinces})
+
+
+@app.put("/admin/api/users/{username}/provinces")
+async def admin_assign_user_provinces(username: str, request: Request, admin: dict = Depends(require_admin)):
+    """管理员为用户分配省份。body: {"provinces": ["上海", "杭州"]}"""
+    # 验证用户存在
+    auth_cfg = load_config()
+    user = find_user(username, auth_cfg)
+    if not user:
+        raise HTTPExceptionLite(404, "用户不存在")
+
+    body = await request.json()
+    provinces = body.get("provinces", [])
+
+    cfg = load_app_config()
+    user_provinces_map = cfg.get("user_provinces", {})
+    user_provinces_map[username] = provinces
+    cfg["user_provinces"] = user_provinces_map
+    save_app_config(cfg)
+    return JSONResponse({"status": "success", "provinces": provinces})
+
+
 # ===================== 管理后台 API — 规则管理 =====================
 
 @app.get("/admin/api/rules")
@@ -952,6 +1060,12 @@ async def admin_delete_rule(rule_id: str, admin: dict = Depends(require_admin)):
     if len(new_rules) == len(rules):
         raise HTTPExceptionLite(404, "规则不存在")
     cfg["rules"] = new_rules
+    # 同时从所有用户的 user_rules 中移除该 rule_id
+    user_rules_map = cfg.get("user_rules", {})
+    for uname, rids in user_rules_map.items():
+        if rule_id in rids:
+            user_rules_map[uname] = [rid for rid in rids if rid != rule_id]
+    cfg["user_rules"] = user_rules_map
     save_app_config(cfg)
     return JSONResponse({"status": "success"})
 

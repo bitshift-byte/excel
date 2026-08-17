@@ -1,0 +1,153 @@
+/* ============================================================
+   樱花柔 · Global Styles
+   ============================================================ */
+
+:root {
+  --primary: #F06595;
+  --primary-d: #D6336C;
+  --primary-l: #FF8FB1;
+  --primary-bg: #FFF0F5;
+  --secondary: #9B7DD4;
+  --secondary-d: #7B5BC4;
+  --secondary-l: #C9A0E8;
+  --secondary-bg: #F5F0FA;
+  --accent: #3DD4A6;
+  --accent-d: #22B888;
+  --accent-l: #5DEBBD;
+  --accent-bg: #EBFBF5;
+  --amber: #F6A609;
+  --amber-d: #D68910;
+  --amber-bg: #FFF9E6;
+  --danger: #E64980;
+  --danger-bg: #FFF0F6;
+  --bg: #FDF6F0;
+  --surface: #FFFFFF;
+  --card-bg: #FFFFFF;
+  --muted: #FBF2EE;
+  --muted-2: #F5E8E2;
+  --text: #3D2B3C;
+  --text-2: #5C4555;
+  --text-3: #8B7588;
+  --text-4: #B0A0AD;
+  --border: #F0DEE7;
+  --border-l: #F8E8EF;
+  --shadow-sm: 0 1px 3px rgba(61,43,60,.04);
+  --shadow-md: 0 4px 8px -2px rgba(240,101,149,.06), 0 2px 4px -1px rgba(61,43,60,.03);
+  --shadow-lg: 0 8px 24px -6px rgba(240,101,149,.15), 0 2px 8px -2px rgba(61,43,60,.04);
+  --shadow-xl: 0 16px 40px -8px rgba(240,101,149,.2), 0 4px 12px -4px rgba(61,43,60,.05);
+  --shadow-pink: 0 8px 24px -6px rgba(240,101,149,.32);
+  --r-xl: 24px;
+  --r-lg: 20px;
+  --r-md: 14px;
+  --r-sm: 10px;
+  --r-pill: 999px;
+  --grad-sakura: linear-gradient(135deg, #F06595, #FF8FB1);
+  --grad-spring: linear-gradient(135deg, #FF8FB1, #C9A0E8, #A8C5E8);
+  --grad-warm: linear-gradient(135deg, #FFF0F5, #F5F0FA);
+  --grad-lavender: linear-gradient(135deg, #9B7DD4, #C9A0E8);
+  --glass-bg: rgba(255,255,255,.72);
+  --glass-border: rgba(255,255,255,.6);
+  --glass-blur: blur(16px);
+  --ease-spring: cubic-bezier(.22,1,.36,1);
+  --dur: .28s;
+  --font-display: 'Quicksand', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+  --font-body: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+}
+
+#app {
+  height: 100vh;
+}
+
+/* ---- Animations ---- */
+@keyframes float-orb {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(20px, -30px) scale(1.05); }
+}
+
+@keyframes blossom-in {
+  from { opacity: 0; transform: translateY(12px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-blossom { animation: blossom-in .4s var(--ease-spring) both; }
+.animate-fade { animation: fade-in .3s ease both; }
+.animate-slide-up { animation: slide-up .35s ease both; }
+
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #E8C5D4; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #D6336C; }
+
+/* ---- Utility ---- */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+}
+
+.gradient-sakura { background: var(--grad-sakura); }
+.gradient-spring { background: var(--grad-spring); }
+.gradient-warm { background: var(--grad-warm); }
+.gradient-lavender { background: var(--grad-lavender); }
+
+.text-primary { color: var(--primary); }
+.text-primary-d { color: var(--primary-d); }
+.text-secondary { color: var(--secondary); }
+.text-accent { color: var(--accent-d); }
+.text-muted { color: var(--text-3); }
+.text-faint { color: var(--text-4); }
+
+/* ---- Page transition ---- */
+.page-enter-active {
+  transition: all 0.3s ease;
+}
+.page-leave-active {
+  transition: all 0.2s ease;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.page-leave-to {
+  opacity: 0;
+}
