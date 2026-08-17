@@ -17,7 +17,7 @@ import urllib.request
 import urllib.error
 
 # 当前版本（CI 打包时通过正则自动替换）
-APP_VERSION = "v1.2.1"
+APP_VERSION = "v1.2.2"
 
 # 待更新标记文件路径（与 exe/app 同目录）
 PENDING_UPDATE_FILE = "pending_update.json"
@@ -342,7 +342,7 @@ timeout /t 3 /nobreak >nul
 del /f /q "{backup_exe}" >nul 2>&1
 del /f /q "%~f0" >nul 2>&1
 """
-    with open(bat_path, "w", encoding="ascii") as f:
+    with open(bat_path, "w", encoding="gbk", errors="replace") as f:
         f.write(bat_content)
 
     _clear_pending()
