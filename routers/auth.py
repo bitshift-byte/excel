@@ -52,7 +52,7 @@ async def login_api(request: Request):
     browser_fp = body.get("browser_fingerprint", "").strip()
     effective_device_id = browser_fp or device_id
 
-    # 创建 session
+    # 创建 session（同时写入内存和 SQLite，重启不丢失）
     token = secrets.token_hex(16)
     state.SESSIONS[token] = {
         "username": user["username"],
@@ -60,6 +60,7 @@ async def login_api(request: Request):
         "role": user.get("role", "user"),
         "features": dict(user.get("features", {})),
     }
+    database.create_session(token, user["username"], effective_device_id)
 
     # 设置活跃登录
     database.set_active_login(username, token, effective_device_id)
@@ -91,11 +92,13 @@ async def login_api(request: Request):
 @router.post("/api/logout")
 async def logout_api(request: Request):
     token = request.cookies.get(config.SESSION_COOKIE)
-    if token and token in state.SESSIONS:
-        username = state.SESSIONS[token]["username"]
-        database.clear_active_login(username)
-        del state.SESSIONS[token]
-    state.SESSION_LAST_CHECK.pop(token, None)
+    if token:
+        username = state.SESSIONS.get(token, {}).get("username", "")
+        if username:
+            database.clear_active_login(username)
+        state.SESSIONS.pop(token, None)
+        state.SESSION_LAST_CHECK.pop(token, None)
+        database.delete_session(token)
     resp = JSONResponse({"status": "success"})
     resp.delete_cookie(config.SESSION_COOKIE)
     return resp

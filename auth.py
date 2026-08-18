@@ -87,9 +87,37 @@ def get_user_provinces(username: str = "") -> list:
 # ===================== 用户信息 =====================
 
 
+def _restore_session_from_db(token: str) -> bool:
+    """从 SQLite 恢复 session 到内存（服务器重启后自动恢复）"""
+    db_session = database.get_session(token)
+    if not db_session:
+        return False
+    username = db_session["username"]
+    # 从数据库获取最新用户信息
+    user = database.get_user(username)
+    if not user or not user.get("enabled", True):
+        database.delete_session(token)
+        return False
+    state.SESSIONS[token] = {
+        "username": username,
+        "name": user.get("name", username),
+        "role": user.get("role", "user"),
+        "features": dict(user.get("features", {})),
+    }
+    state.SESSION_LAST_CHECK[token] = 0
+    # 确保 USERS 缓存中有该用户
+    if username not in state.USERS:
+        state.USERS[username] = user
+    return True
+
+
 def get_current_user(request: Request) -> Optional[dict]:
     token = request.cookies.get(config.SESSION_COOKIE)
-    if token and token in state.SESSIONS:
+    if not token:
+        return None
+
+    # 内存中有 session
+    if token in state.SESSIONS:
         session = state.SESSIONS[token]
         username = session["username"]
         # 优先从 USERS 缓存获取最新信息，回退到 session 中存储的信息
@@ -108,6 +136,17 @@ def get_current_user(request: Request) -> Optional[dict]:
             "role": session.get("role", "user"),
             "features": dict(session.get("features", {})),
         }
+
+    # 内存中没有，尝试从 SQLite 恢复（服务器重启后）
+    if _restore_session_from_db(token):
+        session = state.SESSIONS[token]
+        return {
+            "username": session["username"],
+            "name": session.get("name", session["username"]),
+            "role": session.get("role", "user"),
+            "features": dict(session.get("features", {})),
+        }
+
     return None
 
 
@@ -143,7 +182,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if path in self.PUBLIC_API_PATHS or any(path.startswith(p) for p in self.PUBLIC_PREFIXES):
             return await call_next(request)
 
-        # 已登录用户
+        # 已登录用户（内存命中或从 SQLite 恢复）
         token = request.cookies.get(config.SESSION_COOKIE)
         if token and token in state.SESSIONS:
             username = state.SESSIONS[token]["username"]
@@ -169,6 +208,30 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 state.SESSION_LAST_CHECK[token] = now
 
             return await call_next(request)
+
+        # 内存没有 session，尝试从 SQLite 恢复（服务器重启后自动恢复登录状态）
+        if token:
+            if _restore_session_from_db(token):
+                username = state.SESSIONS[token]["username"]
+                request.state.username = username
+                # 恢复后走正常校验流程
+                now = time.time()
+                last_check = state.SESSION_LAST_CHECK.get(token, 0)
+                if now - last_check > config.SESSION_STATUS_CHECK_INTERVAL:
+                    is_valid, reason = verify_user_status(username)
+                    if not is_valid:
+                        del state.SESSIONS[token]
+                        state.SESSION_LAST_CHECK.pop(token, None)
+                        database.delete_session(token)
+                        if path.startswith("/api/"):
+                            return JSONResponse(
+                                {"status": "error", "detail": reason or "账号已被禁用"},
+                                status_code=403,
+                            )
+                        return await call_next(request)
+                    database.heartbeat(username)
+                    state.SESSION_LAST_CHECK[token] = now
+                return await call_next(request)
 
         # 未登录：API 返回 401 JSON，其他路径交给 pages.py（返回 SPA）
         if path.startswith("/api/"):
