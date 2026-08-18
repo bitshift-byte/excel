@@ -114,22 +114,7 @@
           <span>服务运行中</span>
         </div>
         <div class="version-row">
-          <span class="version">{{ versionText }}</span>
-          <n-button quaternary circle size="tiny" @click="checkUpdate" title="检查更新">
-            <template #icon>
-              <n-icon :size="13"><Refresh /></n-icon>
-            </template>
-          </n-button>
-          <n-tag
-            v-if="hasUpdate"
-            type="primary"
-            size="tiny"
-            round
-            style="cursor: pointer; font-size: 10px"
-            @click="checkUpdate"
-          >
-            {{ updateBadgeText }}
-          </n-tag>
+          <span class="version">Web 版</span>
         </div>
       </div>
     </n-layout-sider>
@@ -219,10 +204,7 @@ function navigate(path) {
   if (isMobile.value) sidebarCollapsed.value = true
 }
 const showHelp = ref(false)
-const versionText = ref('v1.0.0')
-const hasUpdate = ref(false)
-const updateBadgeText = ref('新版本')
-const updateInfo = ref(null)
+
 
 const avatarText = computed(() => {
   const name = userStore.user?.name || userStore.user?.username || '?'
@@ -287,58 +269,9 @@ async function handleLogout() {
   router.push('/login')
 }
 
-async function checkUpdate() {
-  // pywebview 桌面端更新检查
-  if (!window.pywebview || !window.pywebview.api) {
-    message.info('当前运行在浏览器模式下，更新检查仅在桌面应用中可用')
-    return
-  }
-  try {
-    const result = await window.pywebview.api.check_update()
-    if (result && result.has_update) {
-      updateInfo.value = result
-      hasUpdate.value = true
-      updateBadgeText.value = '新版本'
-      const msg = `发现新版本 ${result.latest}！\n\n${result.body || ''}\n\n是否立即下载升级？`
-      if (confirm(msg)) {
-        message.loading('正在下载新版本，请稍候...', { duration: 5000 })
-        const dlResult = await window.pywebview.api.do_update()
-        if (dlResult && dlResult.error) {
-          message.error('下载失败: ' + dlResult.error)
-        } else {
-          message.success('新版本已下载，请重启应用完成升级')
-          updateBadgeText.value = '待重启'
-        }
-      }
-    } else if (result && result.error) {
-      message.error('检查更新失败: ' + result.error)
-    } else {
-      message.success('当前已是最新版本')
-    }
-  } catch (e) {
-    message.error('检查更新失败: ' + e.message)
-  }
-}
 
-async function loadVersion() {
-  if (!window.pywebview || !window.pywebview.api) return
-  try {
-    const v = await window.pywebview.api.get_version()
-    if (v) versionText.value = v
-  } catch (e) {}
-
-  // 检查待应用的更新
-  try {
-    const pending = await window.pywebview.api.has_pending_update?.()
-    if (pending) {
-      hasUpdate.value = true
-      updateBadgeText.value = '待重启'
-    }
-  } catch (e) {}
-}
 
 onMounted(() => {
-  loadVersion()
   handleResize()
   window.addEventListener('resize', handleResize)
   if (sessionStorage.getItem('justLoggedIn') === '1') {

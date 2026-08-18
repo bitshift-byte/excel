@@ -59,10 +59,25 @@ export const api = {
 
 // ===================== 具体接口 =====================
 
+// 生成浏览器指纹（用于单设备登录绑定）
+function generateBrowserFingerprint() {
+  const ua = navigator.userAgent
+  const screen = `${window.screen.width}x${window.screen.height}`
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown'
+  // 简单 hash
+  const str = ua + screen + tz
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i)
+    hash |= 0
+  }
+  return 'fp_' + Math.abs(hash).toString(36)
+}
+
 // 认证
 export const authApi = {
   login: (username, password) =>
-    api.post('/api/login', { username, password }),
+    api.post('/api/login', { username, password, browser_fingerprint: generateBrowserFingerprint() }),
   logout: () => api.post('/api/logout'),
   me: () => api.get('/api/me'),
   sync: () => api.get('/api/sync'),
@@ -137,9 +152,5 @@ export const adminApi = {
   getUserProvinces: (username) => api.get(`/api/admin/users/${username}/provinces`),
   assignUserProvinces: (username, provinces) => api.put(`/api/admin/users/${username}/provinces`, { provinces }),
 
-  // 版本管理
-  updateInfo: () => api.get('/api/admin/update-info'),
-  uploadExe: (formData) => api.upload('/api/admin/upload-exe', formData),
-  deleteUpdateInfo: () => api.del('/api/admin/update-info'),
-  deleteUpdateFile: (filename) => api.del(`/api/admin/update-file/${encodeURIComponent(filename)}`),
+
 }

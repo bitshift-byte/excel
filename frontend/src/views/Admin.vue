@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">管理后台</h1>
-        <p class="page-desc">用户管理、邮件配置、功能开关、规则管理、版本升级</p>
+        <p class="page-desc">用户管理、邮件配置、功能开关、规则管理</p>
       </div>
       <n-button circle tertiary @click="refreshCurrentTab" :loading="loading">
         <template #icon><n-icon :component="Refresh" /></template>
@@ -143,74 +143,6 @@
             </div>
           </div>
         </div>
-      </n-tab-pane>
-
-      <!-- ==================== 版本管理 ==================== -->
-      <n-tab-pane name="version" tab="版本管理">
-        <div class="version-grid">
-          <!-- 当前版本信息 -->
-          <n-card title="当前版本" :bordered="false" class="config-card">
-            <n-descriptions label-placement="top" :column="1" bordered>
-              <n-descriptions-item label="版本号">
-                <n-tag :type="updateInfo.version ? 'success' : 'default'" round>{{ updateInfo.version || '未设置' }}</n-tag>
-              </n-descriptions-item>
-              <n-descriptions-item label="更新说明">{{ updateInfo.notes || '—' }}</n-descriptions-item>
-              <n-descriptions-item label="Windows 安装包">
-                <span v-if="updateInfo.windows?.filename">{{ updateInfo.windows.filename }} ({{ formatSize(updateInfo.windows.size) }})</span>
-                <span v-else class="text-faint">未上传</span>
-              </n-descriptions-item>
-              <n-descriptions-item label="macOS 安装包">
-                <span v-if="updateInfo.macos?.filename">{{ updateInfo.macos.filename }} ({{ formatSize(updateInfo.macos.size) }})</span>
-                <span v-else class="text-faint">未上传</span>
-              </n-descriptions-item>
-            </n-descriptions>
-            <n-button size="small" tertiary type="error" style="margin-top:12px" @click="clearVersionInfo">清除版本信息</n-button>
-          </n-card>
-
-          <!-- 上传新版本 -->
-          <n-card title="上传新版本" :bordered="false" class="config-card">
-            <n-form label-placement="top">
-              <n-form-item label="版本号">
-                <n-input v-model:value="uploadForm.version" placeholder="如 v1.2.0" />
-              </n-form-item>
-              <n-form-item label="更新说明">
-                <n-input v-model:value="uploadForm.notes" type="textarea" :rows="2" placeholder="更新说明..." />
-              </n-form-item>
-              <n-form-item label="平台">
-                <n-radio-group v-model:value="uploadForm.platform">
-                  <n-radio value="windows">Windows (.exe)</n-radio>
-                  <n-radio value="macos">macOS (.zip)</n-radio>
-                </n-radio-group>
-              </n-form-item>
-              <n-form-item label="安装包文件">
-                <n-upload
-                  v-model:file-list="uploadFileList"
-                  :max="1"
-                  :default-upload="false"
-                  accept=".exe,.zip"
-                >
-                  <n-button dashed>
-                    <template #icon><n-icon :component="Upload" /></template>
-                    选择文件
-                  </n-button>
-                </n-upload>
-              </n-form-item>
-              <n-button type="primary" @click="uploadExe" :loading="uploading" :disabled="!uploadForm.version || !uploadFileList.length">
-                上传
-              </n-button>
-            </n-form>
-          </n-card>
-        </div>
-
-        <!-- 已上传文件列表 -->
-        <n-card title="已上传文件" :bordered="false" class="config-card" style="margin-top:16px">
-          <n-data-table
-            :columns="fileColumns"
-            :data="updateInfo.files || []"
-            :bordered="false"
-            :row-key="r => r.filename"
-          />
-        </n-card>
       </n-tab-pane>
     </n-tabs>
 
@@ -388,7 +320,7 @@ import { ref, reactive, computed, h, onMounted } from 'vue'
 import { useMessage, useDialog, NTag, NButton, NSwitch, NSpace, NIcon } from 'naive-ui'
 import { adminApi } from '@/api'
 import {
-  Plus, Close, Refresh, Layers, Upload, ChevronForward, User, Lock, MapPin,
+  Plus, Close, Refresh, Layers, ChevronForward, User, Lock, MapPin,
 } from '@/utils/icons'
 import { CheckmarkCircle } from '@vicons/ionicons5'
 
@@ -411,7 +343,6 @@ const mailConfig = reactive({
   provinces: [],
   output_prefix: '',
 })
-const updateInfo = ref({ version: '', notes: '', windows: {}, macos: {}, files: [] })
 
 // ============== 功能定义 ==============
 const featureList = [
@@ -532,23 +463,6 @@ const featureUserColumns = computed(() => [
   })),
 ])
 
-const fileColumns = [
-  { title: '文件名', key: 'filename' },
-  {
-    title: '大小',
-    key: 'size',
-    render(row) { return formatSize(row.size) },
-  },
-  { title: '修改时间', key: 'modified' },
-  {
-    title: '操作',
-    key: 'actions',
-    render(row) {
-      return h(NButton, { size: 'small', quaternary: true, type: 'error', onClick: () => deleteUpdateFile(row.filename) }, { default: () => '删除' })
-    },
-  },
-]
-
 const adminCount = computed(() => users.value.filter(u => u.role === 'admin' && u.enabled !== false).length)
 
 const currentUser = ref(null)
@@ -623,13 +537,6 @@ async function loadRules() {
   }
 }
 
-async function loadUpdateInfo() {
-  const data = await adminApi.updateInfo()
-  if (data.status === 'success') {
-    updateInfo.value = data
-  }
-}
-
 async function loadCurrentUser() {
   const data = await adminApi.appConfig()
   // Also use the session user from store if available
@@ -645,7 +552,6 @@ function onTabChange(tab) {
   else if (tab === 'mail') loadMailConfig()
   else if (tab === 'features') { loadFeatures(); loadUsers() }
   else if (tab === 'rules') loadRules()
-  else if (tab === 'version') loadUpdateInfo()
 }
 
 function refreshCurrentTab() {
@@ -1094,98 +1000,6 @@ function confirmDeleteRule(rule) {
   delModal.show = true
 }
 
-// ============== 版本管理 ==============
-const uploading = ref(false)
-const uploadForm = reactive({
-  version: '',
-  notes: '',
-  platform: 'windows',
-})
-const uploadFileList = ref([])
-
-async function uploadExe() {
-  if (!uploadForm.version.trim()) {
-    message.warning('请输入版本号')
-    return
-  }
-  if (!uploadFileList.value.length) {
-    message.warning('请选择安装包文件')
-    return
-  }
-  const file = uploadFileList.value[0].file
-  if (!file) return
-
-  if (file.size < 1000000) {
-    message.warning('文件过小，可能不是有效安装包')
-    return
-  }
-  if (file.size > 200 * 1024 * 1024) {
-    message.warning('文件超过 200MB 限制')
-    return
-  }
-
-  uploading.value = true
-  const formData = new FormData()
-  formData.append('file', file)
-  formData.append('version', uploadForm.version)
-  formData.append('notes', uploadForm.notes)
-  formData.append('platform', uploadForm.platform)
-
-  const data = await adminApi.uploadExe(formData)
-  uploading.value = false
-  if (data.status === 'success') {
-    message.success('上传成功')
-    uploadForm.version = ''
-    uploadForm.notes = ''
-    uploadFileList.value = []
-    loadUpdateInfo()
-  } else {
-    message.error(data.detail || '上传失败')
-  }
-}
-
-async function clearVersionInfo() {
-  delModal.title = '清除版本信息'
-  delModal.content = '确定清除当前版本信息吗？已上传的文件不会被删除。'
-  delModal.onConfirm = async () => {
-    const data = await adminApi.deleteUpdateInfo()
-    if (data.status === 'success') {
-      message.success('版本信息已清除')
-      loadUpdateInfo()
-    } else {
-      message.error(data.detail || '操作失败')
-    }
-  }
-  delModal.show = true
-}
-
-async function deleteUpdateFile(filename) {
-  delModal.title = '删除文件'
-  delModal.content = `确定删除文件「${filename}」吗？`
-  delModal.onConfirm = async () => {
-    const data = await adminApi.deleteUpdateFile(filename)
-    if (data.status === 'success') {
-      message.success('文件已删除')
-      loadUpdateInfo()
-    } else {
-      message.error(data.detail || '删除失败')
-    }
-  }
-  delModal.show = true
-}
-
-// ============== 工具函数 ==============
-function formatDate(s) {
-  const d = new Date(s)
-  if (isNaN(d.getTime())) return s || '—'
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-
-function formatSize(bytes) {
-  if (!bytes) return '—'
-  return (bytes / 1024 / 1024).toFixed(1) + ' MB'
-}
-
 // ============== 初始化 ==============
 onMounted(async () => {
   // 获取当前用户
@@ -1545,20 +1359,8 @@ onMounted(async () => {
   margin-top: 8px;
 }
 
-/* ============ Version Management ============ */
-.version-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  align-items: start;
-}
-.version-grid .config-card {
-  margin-bottom: 0;
-}
-
 @media (max-width: 768px) {
   .page-view { padding: 20px 16px; }
-  .version-grid { grid-template-columns: 1fr; }
   .config-form .form-grid { grid-template-columns: 1fr; }
   .config-form .form-grid .n-form-item:last-child,
   .config-form .form-grid .n-form-item:nth-last-child(2) {
@@ -1594,9 +1396,6 @@ onMounted(async () => {
     grid-template-columns: 1fr;
   }
   .config-form .form-grid {
-    grid-template-columns: 1fr;
-  }
-  .version-grid {
     grid-template-columns: 1fr;
   }
   .stat-row {

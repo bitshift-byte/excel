@@ -15,6 +15,11 @@ from collections import deque
 
 from merger import merge_files, _base_dir
 
+try:
+    import database as _db
+except ImportError:
+    _db = None
+
 
 # ---------- 纯逻辑（可测试） ----------
 
@@ -186,25 +191,44 @@ def load_config(path: str) -> dict:
         return json.load(f)
 
 
-TASKS_FILE = os.path.join(_base_dir(), "data", "tasks.json")
 MAX_TASKS = 200
 
 
-def load_tasks(path: str = TASKS_FILE) -> list:
-    if not os.path.exists(path):
+def load_tasks(path: str = None) -> list:
+    """加载邮件任务历史（优先从数据库，回退到文件）"""
+    if _db:
+        try:
+            return _db.get_mail_tasks()
+        except Exception:
+            pass
+    # 回退到文件（兼容旧数据）
+    tasks_file = os.path.join(_base_dir(), "data", "tasks.json")
+    if not os.path.exists(tasks_file):
         return []
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(tasks_file, "r", encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, IOError):
         return []
 
 
-def save_tasks(tasks: list, path: str = TASKS_FILE) -> None:
-    d = os.path.dirname(path)
+def save_tasks(tasks: list, path: str = None) -> None:
+    """保存邮件任务历史到数据库"""
+    if _db:
+        try:
+            # tasks 是 [{"time":..., "mails":[...]}, ...]
+            # database 只存 mails，需要取最新的
+            if tasks:
+                _db.save_mail_task(tasks[0].get("mails", []))
+            return
+        except Exception as e:
+            print(f"[mail_reader] 保存任务到数据库失败: {e}")
+    # 回退到文件
+    tasks_file = os.path.join(_base_dir(), "data", "tasks.json")
+    d = os.path.dirname(tasks_file)
     if d:
         os.makedirs(d, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+    with open(tasks_file, "w", encoding="utf-8") as f:
         json.dump(tasks, f, ensure_ascii=False, indent=2)
 
 
@@ -241,10 +265,17 @@ def process_once(cfg: dict, force: bool = False) -> int:
         target = datetime.date.today()
     since = target
     before = target + datetime.timedelta(days=1)
-    uids_file = cfg.get("processed_uids_file", "data/processed_uids.json")
-    if not os.path.isabs(uids_file):
-        uids_file = os.path.join(_base_dir(), uids_file)
-    processed = set() if force else load_processed_uids(uids_file)
+    # 使用数据库存储已处理 UID（如果没有数据库，回退到文件）
+    uids_file = cfg.get("processed_uids_file")
+    if uids_file:
+        if not os.path.isabs(uids_file):
+            uids_file = os.path.join(_base_dir(), uids_file)
+        processed = set() if force else load_processed_uids(uids_file)
+    elif _db:
+        processed = set() if force else _db.get_processed_uids()
+    else:
+        uids_file = os.path.join(_base_dir(), "data", "processed_uids.json")
+        processed = set() if force else load_processed_uids(uids_file)
     output_dir = cfg.get("output_dir", "output")
     if not os.path.isabs(output_dir):
         output_dir = os.path.join(_base_dir(), output_dir)
@@ -259,52 +290,56 @@ def process_once(cfg: dict, force: bool = False) -> int:
         log(f"共 {len(items)} 封邮件，其中新邮件 {len(new_items)} 封")
         handled = 0
         all_files = []
-        with tempfile.TemporaryDirectory() as collect_dir:
-            file_idx = 0
-            for folder, uid in new_items:
-                try:
-                    imap.select(f'"{folder}"', readonly=True)
-                    typ, data = imap.uid("fetch", uid, "(BODY[HEADER.FIELDS (SUBJECT)])")
-                    subject = ""
-                    if typ == "OK" and data and data[0]:
-                        m = email.message_from_bytes(data[0][1])
-                        subject = decode_subject(m.get("Subject", ""))
-                    files = download_excel_attachments(imap, folder, uid, collect_dir, file_idx)
-                    if not files:
-                        log(f"跳过（无 Excel 附件）: {subject}")
-                        continue
-                    attachment_names = [name for _, name in files]
-                    file_idx += len(files)
-                    matched = matches_keywords(subject, keywords)
-                    if matched:
-                        all_files.extend([path for path, _ in files])
-                        processed.add(f"{folder}::{uid.decode()}")
-                        handled += 1
-                        log(f"匹配: {subject} → {len(files)} 个附件")
-                    else:
-                        log(f"跳过（主题不匹配，含附件）: {subject}")
-                    task_mails.append({
-                        "subject": subject,
-                        "attachments": attachment_names,
-                        "processed": matched,
-                    })
-                except Exception as e:
-                    log(f"处理失败: {uid.decode()} - {e}")
-            if all_files:
-                result = merge_files(
-                    file_paths=all_files,
-                    selected_sheets=None,
-                    provinces=cfg.get("provinces", []),
-                    rule_id=cfg.get("rule_id"),
-                    output_dir=output_dir,
-                    output_prefix=cfg.get("output_prefix", "邮件合并"),
-                    date_str=target.strftime("%Y-%m-%d"),
-                )
-                log(f"合并完成: 全量 {result['stats']['total_merged_rows']} 行，筛选 {result['stats']['filtered_rows']} 行")
-            else:
-                log("无匹配附件，跳过合并")
+        collect_dir = tempfile.TemporaryDirectory()
+        collect_path = collect_dir.name
+        file_idx = 0
+        for folder, uid in new_items:
+            try:
+                imap.select(f'"{folder}"', readonly=True)
+                typ, data = imap.uid("fetch", uid, "(BODY[HEADER.FIELDS (SUBJECT)])")
+                subject = ""
+                if typ == "OK" and data and data[0]:
+                    m = email.message_from_bytes(data[0][1])
+                    subject = decode_subject(m.get("Subject", ""))
+                files = download_excel_attachments(imap, folder, uid, collect_path, file_idx)
+                if not files:
+                    log(f"跳过（无 Excel 附件）: {subject}")
+                    continue
+                attachment_names = [name for _, name in files]
+                file_idx += len(files)
+                matched = matches_keywords(subject, keywords)
+                if matched:
+                    all_files.extend([path for path, _ in files])
+                    processed.add(f"{folder}::{uid.decode()}")
+                    handled += 1
+                    log(f"匹配: {subject} → {len(files)} 个附件")
+                else:
+                    log(f"跳过（主题不匹配，含附件）: {subject}")
+                task_mails.append({
+                    "subject": subject,
+                    "attachments": attachment_names,
+                    "processed": matched,
+                })
+            except Exception as e:
+                log(f"处理失败: {uid.decode()} - {e}")
+        if all_files:
+            result = merge_files(
+                file_paths=all_files,
+                selected_sheets=None,
+                provinces=cfg.get("provinces", []),
+                rule_id=cfg.get("rule_id"),
+                output_dir=output_dir,
+                output_prefix=cfg.get("output_prefix", "邮件合并"),
+                date_str=target.strftime("%Y-%m-%d"),
+            )
+            log(f"合并完成: 全量 {result['stats']['total_merged_rows']} 行，筛选 {result['stats']['filtered_rows']} 行")
+        else:
+            log("无匹配附件，跳过合并")
         if not force:
-            save_processed_uids(uids_file, processed)
+            if uids_file:
+                save_processed_uids(uids_file, processed)
+            elif _db:
+                _db.add_processed_uids(processed)
         if task_mails:
             task = {
                 "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -321,10 +356,14 @@ def process_once(cfg: dict, force: bool = False) -> int:
 
 
 def main():
-    cfg_path = os.environ.get("MAIL_CONFIG", "mail_config.json")
-    cfg = load_config(cfg_path)
+    """主函数：从数据库加载配置并启动"""
+    if _db:
+        cfg = _db.get_mail_config()
+    else:
+        cfg_path = os.environ.get("MAIL_CONFIG", "mail_config.json")
+        cfg = load_config(cfg_path)
     interval = int(cfg.get("poll_interval_seconds", 3600))
-    print(f"[mail_reader] 启动，轮询间隔 {interval}s，配置 {cfg_path}")
+    print(f"[mail_reader] 启动，轮询间隔 {interval}s")
     start_background(cfg)
     try:
         while True:

@@ -3,11 +3,10 @@
 - AuthMiddleware 中间件
 - 用户管理（加载、验证、获取当前用户）
 - 应用配置获取（邮件配置、功能开关、规则）
+- 所有数据直接从 SQLite (database.py) 读取，不再通过 HTTP 调用远程认证服务
 """
 
-import os
 import time
-import httpx
 from typing import Optional
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -16,72 +15,39 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from merger import BUILTIN_RULE, BUILTIN_RULE_ID
 import config
 import state
+import database
 
 
 # ===================== 用户管理 =====================
 
 
-def load_users_from_auth_service() -> dict:
-    """从远程认证服务加载用户列表"""
-    try:
-        resp = httpx.get(
-            f"{config.AUTH_SERVICE_URL}/users",
-            headers={"X-Service-Token": config.get_service_token()},
-            timeout=10,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            return {u["username"]: u for u in data.get("users", [])}
-    except Exception as e:
-        print(f"[auth] 无法连接认证服务 ({config.AUTH_SERVICE_URL}): {e}")
-    return {}
+def load_users_from_db() -> dict:
+    """从数据库加载用户列表"""
+    users = database.get_all_users()
+    return {u["username"]: u for u in users}
 
 
 def refresh_users():
     """刷新用户缓存"""
-    state.USERS = load_users_from_auth_service()
+    state.USERS = load_users_from_db()
 
 
-def verify_user_status_with_auth_service(username: str) -> tuple:
-    """向认证服务校验用户是否仍启用，返回 (is_valid, reason)"""
-    try:
-        resp = httpx.post(
-            f"{config.AUTH_SERVICE_URL}/verify-user",
-            json={"username": username},
-            headers={"X-Service-Token": config.get_service_token()},
-            timeout=5,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            user = data.get("user", {})
-            if user.get("enabled", True):
-                return True, None
-            return False, "账号已被禁用"
-        return False, "认证服务不可用"
-    except Exception:
-        # 认证服务不可用时，不阻断已有 session
-        return True, None
+def verify_user_status(username: str) -> tuple:
+    """校验用户是否仍启用，返回 (is_valid, reason)"""
+    user = database.get_user(username)
+    if not user:
+        return False, "用户不存在"
+    if not user.get("enabled", True):
+        return False, "账号已被禁用"
+    return True, None
 
 
 # ===================== 配置获取 =====================
 
 
-def fetch_app_config_from_auth_service() -> dict:
-    """从认证服务获取应用配置。
-    认证服务返回 {"status": "success", "config": {...}}，
-    我们提取其中的 config 部分（含 mail_config, features, rules）。"""
-    try:
-        resp = httpx.get(
-            f"{config.AUTH_SERVICE_URL}/app-config",
-            headers={"X-Service-Token": config.get_service_token()},
-            timeout=10,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            return data.get("config", {})
-    except Exception as e:
-        print(f"[auth] 获取应用配置失败: {e}")
-    return {}
+def fetch_app_config() -> dict:
+    """从数据库获取应用配置"""
+    return database.get_full_app_config()
 
 
 def get_app_config() -> dict:
@@ -89,62 +55,34 @@ def get_app_config() -> dict:
     now = time.time()
     if state.APP_CONFIG_CACHE and (now - state.APP_CONFIG_CACHE_TIME) < 60:
         return state.APP_CONFIG_CACHE
-    # 重新拉取
-    cfg = fetch_app_config_from_auth_service()
+    cfg = fetch_app_config()
     state.APP_CONFIG_CACHE = cfg
     state.APP_CONFIG_CACHE_TIME = now
     return cfg
 
 
 def get_mail_config() -> dict:
-    """获取邮件配置"""
-    return get_app_config().get("mail_config", {})
+    return database.get_mail_config()
 
 
 def get_features() -> dict:
-    return get_app_config().get("features", {})
+    return database.get_features()
 
 
 def get_remote_rules(username: str = "") -> list:
-    """从认证服务获取规则列表（按用户隔离）"""
-    try:
-        resp = httpx.post(
-            f"{config.AUTH_SERVICE_URL}/rules",
-            json={"username": username},
-            headers={"X-Service-Token": config.get_service_token()},
-            timeout=10,
-        )
-        if resp.status_code == 200:
-            return resp.json().get("rules", [])
-    except Exception as e:
-        print(f"[auth] 获取规则失败: {e}")
-    return []
+    """获取分配给用户的规则 + 内置规则"""
+    return database.get_rules_for_user(username, BUILTIN_RULE)
 
 
 def get_all_rules(username: str = "") -> list:
-    """获取所有规则：内置规则 + 分配给该用户的远程规则"""
-    remote = get_remote_rules(username)
-    has_builtin = any(r.get("id") == "_builtin_default" or r.get("builtin") for r in remote)
-    if has_builtin:
-        return remote
-    return [BUILTIN_RULE] + remote
-
+    """获取所有规则：内置规则 + 分配给该用户的规则"""
+    return get_remote_rules(username)
 
 
 def get_user_provinces(username: str = "") -> list:
-    """从认证服务获取用户分配的省份列表（按用户隔离）"""
-    try:
-        resp = httpx.post(
-            f"{config.AUTH_SERVICE_URL}/user-config",
-            json={"username": username},
-            headers={"X-Service-Token": config.get_service_token()},
-            timeout=10,
-        )
-        if resp.status_code == 200:
-            return resp.json().get("provinces", [])
-    except Exception as e:
-        print(f"[auth] 获取用户省份失败: {e}")
-    return []
+    """获取用户分配的省份列表"""
+    return database.get_user_provinces(username)
+
 
 # ===================== 用户信息 =====================
 
@@ -163,7 +101,7 @@ def get_current_user(request: Request) -> Optional[dict]:
                 "role": user_info.get("role", "user"),
                 "features": dict(user_info.get("features", {})),
             }
-        # 回退：使用 session 中存储的用户信息（认证服务不可达时）
+        # 回退：使用 session 中存储的用户信息
         return {
             "username": username,
             "name": session.get("name", username),
@@ -189,8 +127,8 @@ def require_admin_user(request: Request) -> dict:
 class AuthMiddleware(BaseHTTPMiddleware):
     """拦截需要认证的路由，未登录重定向到 /login"""
 
-    PUBLIC_PATHS = {"/login", "/api/login", "/favicon.ico"}
-    PUBLIC_PREFIXES = ("/static", "/assets")
+    PUBLIC_PATHS = {"/login", "/api/login", "/favicon.ico", "/health"}
+    PUBLIC_PREFIXES = ("/static", "/assets", "/admin/login", "/admin/dashboard", "/admin/static")
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
@@ -202,11 +140,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
             username = state.SESSIONS[token]["username"]
             request.state.username = username
 
-            # 定期向认证服务校验用户是否仍启用
+            # 定期校验用户是否仍启用
             now = time.time()
             last_check = state.SESSION_LAST_CHECK.get(token, 0)
             if now - last_check > config.SESSION_STATUS_CHECK_INTERVAL:
-                is_valid, reason = verify_user_status_with_auth_service(username)
+                is_valid, reason = verify_user_status(username)
                 if not is_valid:
                     del state.SESSIONS[token]
                     state.SESSION_LAST_CHECK.pop(token, None)
@@ -216,16 +154,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                             status_code=403,
                         )
                     return RedirectResponse("/login", status_code=302)
-                # 发送心跳
-                try:
-                    httpx.post(
-                        f"{config.AUTH_SERVICE_URL}/heartbeat",
-                        json={"username": username, "device_id": config.get_device_id()},
-                        headers={"X-Service-Token": config.get_service_token()},
-                        timeout=5,
-                    )
-                except Exception:
-                    pass
+                # 发送心跳（刷新设备绑定活跃时间）
+                database.heartbeat(username)
                 state.SESSION_LAST_CHECK[token] = now
 
             return await call_next(request)

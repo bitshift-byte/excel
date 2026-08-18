@@ -1,6 +1,7 @@
 """合并核心逻辑（从 app.py 抽出，供 Web 与邮件读取器共用）"""
 import os
 import sys
+import re
 import json
 import hashlib
 import datetime
@@ -15,22 +16,13 @@ SAMPLE_ROWS = 10
 
 
 def _base_dir() -> str:
-    """可写数据目录：打包后写入固定的用户数据目录，开发时为项目目录"""
-    if getattr(sys, "frozen", False):
-        if os.name == "nt":
-            appdata = os.environ.get("APPDATA")
-            base = os.path.join(appdata, "ExcelMerger") if appdata else os.path.dirname(sys.executable)
-        else:
-            base = os.path.dirname(sys.executable)
-        os.makedirs(base, exist_ok=True)
-        return base
+    """可写数据目录：项目根目录"""
     return os.path.dirname(os.path.abspath(__file__))
 
 
 def _resource_path(relative: str) -> str:
-    """只读资源路径：PyInstaller 打包后在 sys._MEIPASS 临时目录，开发时为项目目录"""
-    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base, relative)
+    """只读资源路径：项目根目录"""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative)
 
 
 RULES_FILE = os.path.join(_base_dir(), "rules.json")
@@ -61,8 +53,8 @@ BUILTIN_RULE = {
             "name": "工厂",
             "source_columns": ["工厂", "Plant"],
             "value_mappings": [
-                {"source_file_contains": "分销-下单量", "source_value": "8136", "target_value": "701"},
-                {"source_file_contains": "分销-下单量", "source_value": "8137", "target_value": "701"},
+                {"source_file_contains": "分销下单量", "source_value": "8136", "target_value": "701"},
+                {"source_file_contains": "分销下单量", "source_value": "8137", "target_value": "701"},
                 {"source_file_contains": "分销报表", "source_value": "8136", "target_value": "901"},
                 {"source_file_contains": "分销报表", "source_value": "8137", "target_value": "901"},
                 {"source_file_contains": "分销报表", "source_value": "8205", "target_value": "901"},
@@ -83,9 +75,6 @@ BUILTIN_RULE = {
         {
             "name": "街道",
             "source_columns": ["街道", "街道地址"],
-            "value_mappings": [
-                {"when_column": "工厂", "equals": "901", "use_column": "送达方地点"},
-            ],
         },
         {"name": "街道2", "source_columns": ["街道2", "街道 2"]},
         {"name": "街道 3", "source_columns": ["街道 3", "街道3"]},
@@ -201,7 +190,7 @@ def apply_value_mappings(row_dict: dict, std_name: str, value_mappings: list, fi
 
     支持两种映射类型：
     1. 源文件名 + 源值 → 目标值：
-       {"source_file_contains": "分销-下单量", "source_value": "8136", "target_value": "701"}
+       {"source_file_contains": "分销下单量", "source_value": "8136", "target_value": "701"}
     2. 条件跨列映射（当某列等于某值时，用另一列的值替换）：
        {"when_column": "工厂", "equals": "901", "use_column": "送达方地点"}
     """
@@ -404,6 +393,11 @@ def build_pivot_by_delivery(filtered_rows: list) -> list:
             continue
         fa_val = row.get("发货日期", "")
         jr_val = row.get("交货日期", "")
+        # 过滤掉日期为空的行（与标准答案对齐，避免无日期的交货号进入汇总）
+        if not fa_val or not str(fa_val).strip():
+            continue
+        if not jr_val or not str(jr_val).strip():
+            continue
         street_val = row.get("街道", "")
 
         # 收集原始值（用于 Sheet5 回填）
@@ -427,8 +421,8 @@ def build_pivot_by_delivery(filtered_rows: list) -> list:
                 "运达方的名字": row.get("运达方的名字", ""),
                 "送达方地点": row.get("送达方地点", ""),
                 "工厂": row.get("工厂", ""),
-                # Sheet4: 如果日期是文本(str) → 街道=None；如果是 datetime → 街道=原值
-                "街道": street_val if (fa_is_dt or jr_is_dt) else None,
+                # 街道始终保留原值（与标准答案行为一致）
+                "街道": street_val,
                 "发货日期": datetime.date(fa_val.year, fa_val.month, fa_val.day) if fa_is_dt else None,
                 "交货日期": datetime.date(jr_val.year, jr_val.month, jr_val.day) if jr_is_dt else None,
                 "_交货量": 0.0,
@@ -472,8 +466,6 @@ def build_pivot_by_delivery(filtered_rows: list) -> list:
             ywl,
             entry["工厂"],
         ])
-    # 添加 "(空白)" 行
-    result.append(["(空白)", "(空白)", "(空白)", "(空白)", "(空白)", "(空白)", "(空白)", "(空白)", None, None, None, "(空白)"])
     # 添加 "总计" 行
     result.append(["总计", None, None, None, None, None, None, None, round(total_jhl, 3), round(total_zzl, 3), round(total_ywl, 3), None])
     return pivot_headers, result, sheet3_orig
@@ -565,19 +557,57 @@ def build_pivot_by_factory_delivery(all_rows: list) -> list:
     return pivot_headers, full_result
 
 
+def _normalize_cell(value):
+    """规范化单元格值：将整数浮点数转为整数（xlrd 读取 .xls 时数字均为 float），
+    将文本格式日期（如 "2026.08.18"）解析为 datetime 对象。"""
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    # 尝试解析文本格式日期：YYYY.MM.DD 或 YYYY-MM.DD 等
+    if isinstance(value, str):
+        s = value.strip()
+        if s and re.match(r'^\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}$', s):
+            for sep in ('.', '-', '/'):
+                parts = s.split(sep)
+                if len(parts) == 3:
+                    try:
+                        y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+                        return datetime.datetime(y, m, d)
+                    except (ValueError, IndexError):
+                        pass
+    return value
+
+
 def _parse_sheet_rows(rows: list) -> Tuple[tuple, list]:
-    """从行列表中提取表头和有效数据行（不含空行）"""
+    """从行列表中提取表头和有效数据行（不含空行）。
+
+    自动跳过开头的标题行 / 空行：扫描前 10 行，选择非空单元格最多的一行作为表头。
+    真正的表头行通常有大量非空列，而标题行只有 1-3 个非空单元格。
+    """
     if not rows:
         return None
-    raw_headers = rows[0]
+
+    def _non_empty_count(row):
+        return sum(1 for c in row if c is not None and str(c).strip() != "")
+
+    # 扫描前 10 行，选择非空单元格最多的一行作为表头
+    max_scan = min(len(rows), 10)
+    header_idx = 0
+    best_count = 0
+    for i in range(max_scan):
+        cnt = _non_empty_count(rows[i])
+        if cnt > best_count:
+            best_count = cnt
+            header_idx = i
+
+    raw_headers = rows[header_idx]
     last_non_none = -1
     for idx, h in enumerate(raw_headers):
         if h is not None:
             last_non_none = idx
     if last_non_none < 0:
         return None
-    headers = tuple(raw_headers[: last_non_none + 1])
-    data_rows = [tuple(r[: last_non_none + 1]) for r in rows[1:]]
+    headers = tuple(_normalize_cell(h) for h in raw_headers[: last_non_none + 1])
+    data_rows = [tuple(_normalize_cell(c) for c in r[: last_non_none + 1]) for r in rows[header_idx + 1 :]]
     data_rows = [r for r in data_rows if any(c is not None and str(c).strip() != "" for c in r)]
     return headers, data_rows
 
@@ -661,9 +691,22 @@ def read_all_sheets(filepath: str) -> Dict[str, Tuple[tuple, list]]:
         wb.close()
     elif ftype == "xls":
         wb = xlrd.open_workbook(filepath)
+        datemode = wb.datemode
         for sname in wb.sheet_names():
             sheet = wb.sheet_by_name(sname)
-            rows = [sheet.row_values(r) for r in range(sheet.nrows)]
+            rows = []
+            for r in range(sheet.nrows):
+                row = []
+                for c in range(sheet.ncols):
+                    ctype = sheet.cell_type(r, c)
+                    val = sheet.cell_value(r, c)
+                    if ctype == xlrd.XL_CELL_DATE:
+                        try:
+                            val = xlrd.xldate_as_datetime(val, datemode)
+                        except Exception:
+                            pass
+                    row.append(val)
+                rows.append(row)
             parsed = _parse_sheet_rows(rows)
             if parsed is not None:
                 result[sname] = parsed
@@ -706,8 +749,29 @@ def merge_files(
     os.makedirs(output_dir, exist_ok=True)
     prov_list = provinces or []
 
+    # 排除不参与合并的文件：下单计划（数据重复，工厂值未映射）
+    EXCLUDE_KEYWORDS = ["下单计划"]
+    filtered_paths = [
+        fp for fp in file_paths
+        if not any(kw in os.path.basename(fp) for kw in EXCLUDE_KEYWORDS)
+    ]
+
+    # 按文件优先级排序：06o/分销报表/分销下单量/跑单明细 优先
+    def _file_priority(fp):
+        fn = os.path.basename(fp).lower()
+        if "06o" in fn:
+            return 0
+        if "分销报表" in fn:
+            return 1
+        if "分销下单量" in fn or "分销-下单量" in fn:
+            return 2
+        if "跑单明细" in fn:
+            return 3
+        return 5
+
+    sorted_paths = sorted(filtered_paths, key=_file_priority)
     files_data = {}
-    for fp in file_paths:
+    for fp in sorted_paths:
         fname = os.path.basename(fp)
         files_data[fname] = read_all_sheets(fp)
 
@@ -720,12 +784,21 @@ def merge_files(
                 std_header_order = [sh["name"] for sh in r["standard_headers"] if sh.get("name", "").strip()]
                 break
 
-    # selected_sheets 为 None 时全选所有 sheet
+    # selected_sheets 为 None 时，按表头与规则标准表头的匹配率自动筛选 sheet
+    # 只选匹配率 >= 60% 的 sheet，排除无关 sheet（如 OMR 导出、预报量等）
+    SHEET_MATCH_THRESHOLD = 0.75
     if selected_sheets is None:
         selected_set = set()
+        std_header_count = len(std_header_order)
         for fname, sheets in files_data.items():
-            for sname in sheets:
-                selected_set.add(f"{fname}::{sname}")
+            for sname, (headers, data_rows) in sheets.items():
+                if not headers or not data_rows:
+                    continue
+                auto_map = match_columns_to_rule(list(headers), active_rule)
+                matched_count = sum(1 for m in auto_map if m and m[1])
+                match_ratio = matched_count / std_header_count if std_header_count else 0
+                if match_ratio >= SHEET_MATCH_THRESHOLD:
+                    selected_set.add(f"{fname}::{sname}")
     else:
         selected_set = set(selected_sheets)
 
@@ -770,6 +843,32 @@ def merge_files(
                     vm = sh.get("value_mappings")
                     if vm:
                         apply_value_mappings(row_dict, sh["name"], vm, fname)
+                # 分销报表特殊处理：如果有「提货仓库」列，用提货仓库值覆盖工厂值
+                # （提货仓库=YG → 工厂=YG，而非 8136→901 的默认映射）
+                if "分销报表" in fname:
+                    _thck_idx = None
+                    for _i, _h in enumerate(headers):
+                        if str(_h).strip() == "提货仓库":
+                            _thck_idx = _i
+                            break
+                    if _thck_idx is not None and _thck_idx < len(row):
+                        _thck_val = row[_thck_idx]
+                        if _thck_val is not None and str(_thck_val).strip():
+                            row_dict["工厂"] = str(_thck_val).strip()
+                # 单位转换：统一总重量为吨、业务量为M3
+                _wun = str(row_dict.get("WUn", "")).strip()
+                if _wun == "公斤":
+                    _zw = row_dict.get("总重量")
+                    if isinstance(_zw, (int, float)) and _zw:
+                        row_dict["总重量"] = _zw / 1000
+                    row_dict["WUn"] = "吨"
+                _vun = str(row_dict.get("VUn", "")).strip()
+                if _vun == "CCM":
+                    _yw = row_dict.get("业务量")
+                    if isinstance(_yw, (int, float)) and _yw:
+                        row_dict["业务量"] = _yw / 1000000
+                    row_dict["VUn"] = "M3"
+                row_dict["_source_file"] = f"{fname}::{sname}"
                 merged_rows.append(row_dict)
 
     # 对齐 + 去重 + 过滤非法交货号
@@ -777,6 +876,7 @@ def merge_files(
     seen_keys = set()
     for row in merged_rows:
         aligned_row = {col: (row.get(col) if row.get(col) is not None else "") for col in all_columns}
+        aligned_row["_source_file"] = row.get("_source_file", "")
         jh_val = str(aligned_row.get("交货", "")).strip()
         if jh_val and not jh_val.isdigit():
             continue
@@ -785,7 +885,13 @@ def merge_files(
         xm_val = str(aligned_row.get("项目", "")).strip()
         if not xm_val:
             continue
-        dedup_key = (jh_val, xm_val)
+        # 标准化项目号：去掉前导零，使 "000010" 和 "10" 被识别为同一项目
+        # 避免不同来源文件（分销报表 vs 跨仓订单）的重复行被重复计算
+        if xm_val.isdigit():
+            xm_normalized = str(int(xm_val))
+        else:
+            xm_normalized = xm_val
+        dedup_key = (jh_val, xm_normalized)
         if dedup_key in seen_keys:
             continue
         seen_keys.add(dedup_key)

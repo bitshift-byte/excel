@@ -42,7 +42,7 @@ async def run_mail_once(request: Request):
     if not cfg or not cfg.get("email"):
         raise HTTPException(status_code=400, detail="邮件配置未设置，请在管理后台配置")
     cfg["output_dir"] = config.OUTPUT_DIR
-    cfg["processed_uids_file"] = os.path.join(config.DATA_DIR, "processed_uids.json")
+    cfg["processed_uids_file"] = None  # 使用数据库存储
     try:
         body = await request.json()
     except Exception:

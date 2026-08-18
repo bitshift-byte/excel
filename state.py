@@ -8,19 +8,15 @@
 import time
 from typing import Dict
 
-# session token → {username} 映射（内存存储，重启失效）
+# session token → {username, name, role, features} 映射（内存存储，重启失效）
 SESSIONS: Dict[str, dict] = {}
 
 # session → 上次校验用户状态的时间戳
 SESSION_LAST_CHECK: Dict[str, float] = {}
 
-# 用户列表缓存（从认证服务加载）
+# 用户列表缓存（从数据库加载）
 USERS: dict = {}
 
-# 应用配置缓存（从认证服务获取）
+# 应用配置缓存
 APP_CONFIG_CACHE: dict = {}
 APP_CONFIG_CACHE_TIME: float = 0.0
-
-# 管理员 session cookie 缓存（用于 admin proxy）
-_admin_session_cookie: str | None = None
-_admin_session_expiry: float = 0

@@ -1,17 +1,17 @@
 """
 认证 / 会话相关路由
 - 登录、登出、当前用户、同步状态、用户列表、规则列表
-逻辑从原 app.py 中拆分而来，使用 config / state / auth 模块共享状态。
+- 直接调用 database.py，不再通过 HTTP 调用远程认证服务
 """
 
 import secrets
-import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 import config
 import state
 import auth
+import database
 import mail_reader
 
 router = APIRouter()
@@ -19,7 +19,7 @@ router = APIRouter()
 
 @router.post("/api/login")
 async def login_api(request: Request):
-    """用户名 + 密码登录：调用认证服务校验"""
+    """用户名 + 密码登录"""
     body = await request.json()
     username = body.get("username", "").strip()
     password = body.get("password", "").strip()
@@ -29,62 +29,56 @@ async def login_api(request: Request):
             status_code=400,
         )
 
-    # 登录前先清除该用户的旧设备绑定（解决同一台电脑重复登录被拒的问题）
-    # 这使得"最后登录者获胜"：新登录会替换旧会话，同时保持单设备在线
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{config.AUTH_SERVICE_URL}/logout",
-                json={"username": username},
-                headers={"X-Service-Token": config.get_service_token()},
-                timeout=5,
-            )
-    except Exception:
-        pass  # 如果清除失败，继续尝试登录
-
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{config.AUTH_SERVICE_URL}/login",
-                json={
-                    "username": username,
-                    "password": password,
-                    "device_id": config.get_device_id(),
-                },
-                timeout=15,
-            )
-    except httpx.ConnectError:
+    # 获取用户
+    user = database.get_user(username)
+    if not user or not database.verify_password(user, password):
         return JSONResponse(
-            {"status": "error", "detail": "认证服务不可用"},
-            status_code=503,
+            {"status": "error", "detail": "用户名或密码错误"},
+            status_code=401,
         )
 
-    data = resp.json()
-    if resp.status_code != 200 or data.get("status") != "success":
-        return JSONResponse(content=data, status_code=resp.status_code)
+    if not user.get("enabled", True):
+        return JSONResponse(
+            {"status": "error", "detail": "该账号已被禁用"},
+            status_code=403,
+        )
 
-    user_info = data["user"]
+    # 单设备登录检查
+    device_id = body.get("device_id", "").strip()
+    # 网页版：前端传浏览器指纹作为 device_id
+    browser_fp = body.get("browser_fingerprint", "").strip()
+    effective_device_id = browser_fp or device_id
 
-    # 刷新用户表
-    state.USERS = auth.load_users_from_auth_service()
+    allow, reason = database.check_device_login(username, effective_device_id)
+    if not allow:
+        return JSONResponse(
+            {"status": "error", "detail": reason},
+            status_code=409,
+        )
 
-    # 将用户信息存入 session
+    # 创建 session
     token = secrets.token_hex(16)
     state.SESSIONS[token] = {
-        "username": user_info["username"],
-        "name": user_info.get("name", user_info["username"]),
-        "role": user_info.get("role", "user"),
-        "features": dict(user_info.get("features", {})),
+        "username": user["username"],
+        "name": user.get("name", user["username"]),
+        "role": user.get("role", "user"),
+        "features": dict(user.get("features", {})),
     }
+
+    # 设置活跃登录
+    database.set_active_login(username, token, effective_device_id)
+
+    # 刷新用户缓存
+    auth.refresh_users()
 
     resp = JSONResponse(
         {
             "status": "success",
             "user": {
-                "username": user_info["username"],
-                "name": user_info["name"],
-                "role": user_info["role"],
-                "features": user_info.get("features", {}),
+                "username": user["username"],
+                "name": user.get("name", user["username"]),
+                "role": user.get("role", "user"),
+                "features": user.get("features", {}),
             },
         }
     )
@@ -103,16 +97,7 @@ async def logout_api(request: Request):
     token = request.cookies.get(config.SESSION_COOKIE)
     if token and token in state.SESSIONS:
         username = state.SESSIONS[token]["username"]
-        # 通知认证服务清除设备绑定
-        try:
-            httpx.post(
-                f"{config.AUTH_SERVICE_URL}/logout",
-                json={"username": username},
-                headers={"X-Service-Token": config.get_service_token()},
-                timeout=5,
-            )
-        except Exception:
-            pass
+        database.clear_active_login(username)
         del state.SESSIONS[token]
     state.SESSION_LAST_CHECK.pop(token, None)
     resp = JSONResponse({"status": "success"})
@@ -143,56 +128,66 @@ async def get_me(request: Request):
 
 @router.get("/api/sync")
 async def sync_status(request: Request):
-    """前端每 5 秒轮调：返回用户状态 + 功能开关 + 邮件配置 + 邮件运行状态。
-    如果用户已被禁用或踢下线，返回 401 让前端跳转登录。"""
+    """前端每 5 秒轮调：返回用户状态 + 功能开关 + 邮件配置 + 邮件运行状态。"""
     user = auth.get_current_user(request)
     if not user:
         return JSONResponse(
             {"status": "error", "detail": "未登录"},
             status_code=401,
         )
-    # 强制刷新 USERS 缓存，确保拿到最新的用户信息
-    cfg = auth.get_mail_config()
-    safe_cfg = {k: v for k, v in cfg.items() if k != "auth_code"} if cfg else {}
+    # 获取最新用户信息
+    db_user = database.get_user(user["username"])
+    if not db_user or not db_user.get("enabled", True):
+        # 用户已被禁用或删除
+        token = request.cookies.get(config.SESSION_COOKIE)
+        if token and token in state.SESSIONS:
+            del state.SESSIONS[token]
+        return JSONResponse(
+            {"status": "error", "detail": "账号已被禁用"},
+            status_code=401,
+        )
+
+    # 获取邮件配置（隐藏 auth_code）
+    mail_cfg = database.get_mail_config()
+    safe_cfg = {k: v for k, v in mail_cfg.items() if k != "auth_code"} if mail_cfg else {}
+
     # 按用户隔离省份
     username = user["username"]
-    user_provinces = auth.get_user_provinces(username)
-    if user_provinces:
-        safe_cfg["provinces"] = user_provinces
-    elif "provinces" not in safe_cfg:
-        safe_cfg["provinces"] = []
-    return JSONResponse(
-        {
-            "status": "success",
-            "user": {
-                "username": user["username"],
-                "name": user["name"],
-                "role": user["role"],
-                "features": user.get("features", {}),
-            },
-            "mail_config": safe_cfg,
-            "mail_running": mail_reader.is_running(),
-        }
-    )
+    user_provinces = database.get_user_provinces(username)
 
+    # 获取用户规则
+    rules = auth.get_all_rules(username)
 
-@router.get("/api/users")
-async def list_users(request: Request):
-    """仅管理员可查看用户列表"""
-    auth.require_admin_user(request)
-    users = [
-        {
-            "username": u.get("username", ""),
-            "name": u.get("name", ""),
-            "role": u.get("role", "user"),
-        }
-        for u in state.USERS.values()
-    ]
-    return JSONResponse(content={"status": "success", "users": users})
+    return JSONResponse({
+        "status": "success",
+        "user": {
+            "username": db_user["username"],
+            "name": db_user.get("name", db_user["username"]),
+            "role": db_user.get("role", "user"),
+            "features": db_user.get("features", {}),
+        },
+        "features": db_user.get("features", {}),
+        "mail_config": safe_cfg,
+        "mail_running": mail_reader.is_running(),
+        "user_provinces": user_provinces,
+        "rules": rules,
+    })
 
 
 @router.get("/api/rules")
-async def list_rules(request: Request):
+async def get_rules(request: Request):
+    """获取当前用户的规则列表"""
     user = auth.get_current_user(request)
     username = user.get("username", "") if user else ""
-    return JSONResponse(content={"status": "success", "rules": auth.get_all_rules(username)})
+    rules = auth.get_all_rules(username)
+    return JSONResponse({"status": "success", "rules": rules})
+
+
+@router.get("/api/features")
+async def get_features(request: Request):
+    user = auth.get_current_user(request)
+    if not user:
+        return JSONResponse({"status": "error", "detail": "未登录"}, status_code=401)
+    return JSONResponse(
+        content={"status": "success", "features": user.get("features", {})}
+    )
