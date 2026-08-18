@@ -37,6 +37,7 @@ from merger import _resource_path
 from routers.auth import router as auth_router
 from routers.merge import router as merge_router
 from routers.mail import router as mail_router
+from routers.mail_merge import router as mail_merge_router
 from routers.admin import router as admin_router
 from routers.pages import router as pages_router
 
@@ -113,6 +114,7 @@ async def _admin_error_handler(request, exc: AdminError):
 app.include_router(auth_router)
 app.include_router(merge_router)
 app.include_router(mail_router)
+app.include_router(mail_merge_router)
 app.include_router(admin_router)
 app.include_router(pages_router)
 

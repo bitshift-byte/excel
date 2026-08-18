@@ -133,6 +133,8 @@ async def process_files(
     selected_sheets: str = Form("[]"),
     provinces: str = Form("[]"),
     rule_id: str = Form(""),
+    delivery_min: str = Form(""),
+    delivery_max: str = Form(""),
 ):
     session_dir = os.path.join(config.UPLOAD_DIR, session_id)
     if not os.path.isdir(session_dir):
@@ -149,6 +151,14 @@ async def process_files(
         if fname.lower().endswith((".xlsx", ".xls", ".csv", ".tsv"))
     ]
 
+    # 交货号区间筛选（可选）
+    delivery_range = None
+    if delivery_min and delivery_max:
+        try:
+            delivery_range = (int(delivery_min.strip()), int(delivery_max.strip()))
+        except (ValueError, TypeError):
+            pass
+
     result = merge_files(
         file_paths=file_paths,
         selected_sheets=selected,
@@ -157,10 +167,14 @@ async def process_files(
         output_dir=config.OUTPUT_DIR,
         output_prefix=("筛选结果" if prov_list else "合并结果"),
         manual_mappings=json.loads(mappings) or None,
+        delivery_range=delivery_range,
     )
     stats = result["stats"]
     stats["selected_sheets"] = len(selected)
-    stats["sheet_count"] = 5
+    # sheet 数量取决于是否有奥妙数据（条件创建）
+    # 基础 5 个：全量数据、筛选数据、交货汇总、交货汇总_文本日期、工厂交货透视
+    # 有奥妙数据时 +2：奥妙明细、奥妙小计
+    stats["sheet_count"] = 7 if stats.get("omo_detail_count", 0) > 0 else 5
 
     return JSONResponse(
         content={

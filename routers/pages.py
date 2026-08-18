@@ -6,13 +6,15 @@ from merger import _resource_path
 
 router = APIRouter()
 
+NO_CACHE_HEADERS = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+
 
 def _serve_spa():
     """返回 Vue SPA 的 index.html"""
     if config.USE_VUE_FRONTEND:
-        return config.serve_vue_index()
+        return HTMLResponse(content=config.serve_vue_index(), headers=NO_CACHE_HEADERS)
     with open(_resource_path("templates/index.html"), "r", encoding="utf-8") as f:
-        return f.read()
+        return HTMLResponse(content=f.read(), headers=NO_CACHE_HEADERS)
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -23,8 +25,8 @@ async def index(request: Request):
 # 旧路径重定向到 hash 路由，保持 URL 干净
 @router.get("/login", response_class=HTMLResponse)
 async def login_page():
-    # 重定向到 /#/login，让 Vue 路由处理
-    return RedirectResponse("/#/login", status_code=302)
+    # 直接返回 SPA，让 Vue Router 处理 /login 路由
+    return _serve_spa()
 
 
 @router.get("/mail", response_class=HTMLResponse)
@@ -45,3 +47,8 @@ async def admin_page():
 @router.get("/rules", response_class=HTMLResponse)
 async def rules_page():
     return RedirectResponse("/#/rules", status_code=302)
+
+
+@router.get("/mail-merge", response_class=HTMLResponse)
+async def mail_merge_page():
+    return RedirectResponse("/#/mail-merge", status_code=302)

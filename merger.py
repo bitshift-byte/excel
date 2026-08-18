@@ -372,20 +372,24 @@ def _try_parse_date(val):
     return None
 
 
-def build_pivot_by_delivery(filtered_rows: list) -> list:
+def build_pivot_by_delivery(filtered_rows: list, logistics_map: Optional[Dict] = None) -> Tuple[list, list, dict]:
     """Sheet4/Sheet5: 按交货号汇总透视表（从 Sheet3 筛选数据构建）
-    列: 交货, 销售凭证, 运达方, 运达方的名字, 送达方地点, 工厂, 街道, 发货日期, 交货日期, 求和项:交货量, 求和项:总重量, 求和项:业务量
+    列: 交货, 销售凭证, 运达方, 运达方的名字, 送达方地点, 工厂, 街道, 发货日期, 交货日期, 求和项:交货量, 求和项:总重量, 求和项:业务量, B_ADDRESS1, 备注, 1, 2
 
     Sheet4 规则（模拟 Excel 透视表行为）：
     - 数值列：SUM 求和
     - 日期为 datetime → Sheet4 保持 datetime，街道保持原值
     - 日期为文本格式(str) → Sheet4 中日期=None，街道=None（Excel 透视表丢弃文本日期行字段）
+    - B_ADDRESS1/备注：通过 logistics_map（已发运/未发运的销售凭证→物流信息）LEFT JOIN 取出
+    - 列1/列2（O/P 子合计）：该交货下"奥妙+洗衣粉/皂粉"类别的总重量/业务量子合计
 
     Sheet5 规则：Sheet4 的副本，但 None 的日期/街道用 Sheet3 原始文本值回填
     """
     pivot_map = OrderedDict()
     # 保存 Sheet3 中的原始文本值（用于 Sheet5 回填）
     sheet3_orig = {}  # delivery -> {"发货日期": orig_val, "交货日期": orig_val, "街道": orig_val}
+    # 计算"奥妙+洗衣粉/皂粉"子合计（用于 Sheet4 的 O/P 列和 Sheet5）
+    omo_subtotals = {}  # delivery -> {"zzl": 0.0, "ywl": 0.0}
 
     for row in filtered_rows:
         delivery = str(row.get("交货", "")).strip()
@@ -399,6 +403,19 @@ def build_pivot_by_delivery(filtered_rows: list) -> list:
         if not jr_val or not str(jr_val).strip():
             continue
         street_val = row.get("街道", "")
+
+        # 检查是否为"奥妙+洗衣粉/皂粉"类别
+        desc = str(row.get("描述", ""))
+        is_omo = "奥妙" in desc and ("洗衣粉" in desc or "皂粉" in desc)
+        if is_omo:
+            if delivery not in omo_subtotals:
+                omo_subtotals[delivery] = {"zzl": 0.0, "ywl": 0.0}
+            zzl_v = _to_number(row.get("总重量"))
+            ywl_v = _to_number(row.get("业务量"))
+            if zzl_v:
+                omo_subtotals[delivery]["zzl"] += zzl_v
+            if ywl_v:
+                omo_subtotals[delivery]["ywl"] += ywl_v
 
         # 收集原始值（用于 Sheet5 回填）
         if delivery not in sheet3_orig:
@@ -440,6 +457,7 @@ def build_pivot_by_delivery(filtered_rows: list) -> list:
         "发货日期", "交货日期", "送达方地点", "运达方", "销售凭证",
         "交货", "运达方的名字", "街道",
         "求和项:交货量", "求和项:总重量", "求和项:业务量", "工厂",
+        "B_ADDRESS1", "备注", "1", "2",
     ]
     result = []
     total_jhl = 0.0
@@ -452,6 +470,19 @@ def build_pivot_by_delivery(filtered_rows: list) -> list:
         total_jhl += jhl
         total_zzl += zzl
         total_ywl += ywl
+        # 通过 logistics_map LEFT JOIN 取 B_ADDRESS1/备注
+        addr1 = ""
+        remark = ""
+        if logistics_map:
+            xp = str(entry["销售凭证"]).strip() if entry["销售凭证"] else ""
+            logi = logistics_map.get(xp)
+            if logi:
+                addr1 = logi.get("B_ADDRESS1", "") or ""
+                remark = logi.get("备注", "") or ""
+        # O/P 子合计：奥妙+洗衣粉/皂粉的总重量/业务量
+        omo = omo_subtotals.get(entry["交货"])
+        o_val = round(omo["zzl"], 3) if omo else None
+        p_val = round(omo["ywl"], 3) if omo else None
         result.append([
             entry["发货日期"],
             entry["交货日期"],
@@ -465,13 +496,94 @@ def build_pivot_by_delivery(filtered_rows: list) -> list:
             zzl,
             ywl,
             entry["工厂"],
+            addr1,
+            remark,
+            o_val,
+            p_val,
         ])
     # 添加 "总计" 行
-    result.append(["总计", None, None, None, None, None, None, None, round(total_jhl, 3), round(total_zzl, 3), round(total_ywl, 3), None])
+    result.append(["总计", None, None, None, None, None, None, None, round(total_jhl, 3), round(total_zzl, 3), round(total_ywl, 3), None, None, None, None, None])
     return pivot_headers, result, sheet3_orig
 
 
-def build_pivot_by_factory_delivery(all_rows: list) -> list:
+def read_logistics_map(files_data: Dict) -> Dict[str, Dict]:
+    """从已发运/未发运 sheet 构建 销售凭证 → {B_ADDRESS1, 备注} 映射。
+    
+    遍历所有输入文件中名为"已发运"或"未发运"的 sheet，
+    按"销售凭证"列去重（LEFT JOIN 语义：已发运优先）。
+    """
+    logistics_map = {}
+    for fname, sheets in files_data.items():
+        for sname, (headers, data_rows) in sheets.items():
+            if sname not in ("已发运", "未发运"):
+                continue
+            h_map = {}
+            for i, h in enumerate(headers):
+                h_map[str(h).strip() if h else ""] = i
+            ci_xp = h_map.get("销售凭证")
+            ci_addr = h_map.get("B_ADDRESS1")
+            ci_remark = h_map.get("备注")
+            if ci_xp is None:
+                continue
+            is_sent = (sname == "已发运")
+            for row in data_rows:
+                xp = str(row[ci_xp]).strip() if ci_xp < len(row) and row[ci_xp] is not None else ""
+                if not xp:
+                    continue
+                # 已发运优先：如果已存在则不覆盖
+                if xp in logistics_map and logistics_map[xp].get("_from_sent"):
+                    continue
+                addr = row[ci_addr] if ci_addr is not None and ci_addr < len(row) else None
+                remark = row[ci_remark] if ci_remark is not None and ci_remark < len(row) else None
+                logistics_map[xp] = {
+                    "B_ADDRESS1": addr if addr is not None else "",
+                    "备注": remark if remark is not None else "",
+                    "_from_sent": is_sent,
+                }
+    return logistics_map
+
+
+def build_omo_detail(filtered_rows: list, std_headers: list) -> Tuple[list, list]:
+    """生成"奥妙+洗衣粉/皂粉"明细子集和小计表。
+    
+    返回 (omo_detail_rows, omo_subtotal_rows):
+    - omo_detail_rows: 筛选出的明细行（同标准列，去掉空列），用于"奥妙明细"sheet
+    - omo_subtotal_rows: 按交货号汇总的 (交货, 求和项:总重量, 求和项:业务量)，用于"奥妙小计"sheet
+    """
+    detail_rows = []
+    subtotal_map = OrderedDict()
+    
+    for row in filtered_rows:
+        desc = str(row.get("描述", ""))
+        if "奥妙" not in desc or ("洗衣粉" not in desc and "皂粉" not in desc):
+            continue
+        delivery = str(row.get("交货", "")).strip()
+        if not delivery:
+            continue
+        # 明细行
+        detail_rows.append([row.get(h, "") for h in std_headers])
+        # 小计
+        if delivery not in subtotal_map:
+            subtotal_map[delivery] = {"zzl": 0.0, "ywl": 0.0}
+        zzl_v = _to_number(row.get("总重量"))
+        ywl_v = _to_number(row.get("业务量"))
+        if zzl_v:
+            subtotal_map[delivery]["zzl"] += zzl_v
+        if ywl_v:
+            subtotal_map[delivery]["ywl"] += ywl_v
+    
+    subtotal_rows = []
+    for delivery, sub in subtotal_map.items():
+        subtotal_rows.append([
+            delivery,
+            round(sub["zzl"], 3) if sub["zzl"] else 0,
+            round(sub["ywl"], 3) if sub["ywl"] else 0,
+        ])
+    
+    return detail_rows, subtotal_rows
+
+
+def build_pivot_by_factory_delivery(all_rows: list) -> Tuple[list, list]:
     """Sheet2: 按工厂+交货号透视
     列: 工厂, 交货, 计数项:物料, 求和项:交货量, 求和项:总重量
 
@@ -600,14 +712,21 @@ def _parse_sheet_rows(rows: list) -> Tuple[tuple, list]:
             header_idx = i
 
     raw_headers = rows[header_idx]
-    last_non_none = -1
+    # 找到第一个和最后一个非空列，剥离前导/尾部空列
+    first_non_empty = None
+    last_non_empty = -1
     for idx, h in enumerate(raw_headers):
-        if h is not None:
-            last_non_none = idx
-    if last_non_none < 0:
+        if h is not None and str(h).strip() != "":
+            if first_non_empty is None:
+                first_non_empty = idx
+            last_non_empty = idx
+    if first_non_empty is None or last_non_empty < 0:
         return None
-    headers = tuple(_normalize_cell(h) for h in raw_headers[: last_non_none + 1])
-    data_rows = [tuple(_normalize_cell(c) for c in r[: last_non_none + 1]) for r in rows[header_idx + 1 :]]
+    headers = tuple(_normalize_cell(h) for h in raw_headers[first_non_empty : last_non_empty + 1])
+    data_rows = [
+        tuple(_normalize_cell(c) for c in r[first_non_empty : last_non_empty + 1])
+        for r in rows[header_idx + 1 :]
+    ]
     data_rows = [r for r in data_rows if any(c is not None and str(c).strip() != "" for c in r)]
     return headers, data_rows
 
@@ -737,13 +856,15 @@ def merge_files(
     output_prefix: str = "合并结果",
     manual_mappings: Optional[Dict] = None,
     date_str: Optional[str] = None,
+    delivery_range: Optional[Tuple[int, int]] = None,
 ) -> Dict:
-    """合并多个 Excel 文件为统一标准列，可选按省份筛选，输出 Excel。
+    """合并多个 Excel 文件为统一标准列，可选按省份/交货号区间筛选，输出 Excel。
 
     selected_sheets: sheet key 列表，格式 f"{文件名}::{sheet名}"；None 表示全选。
     provinces: 省份列表；None/[] 表示不筛选（全量）。
     rule_id: 规则 id；None 使用内置默认规则。
     manual_mappings: 手动列名映射 {sheet_key: {原始列名: 标准列名}}；None 表示仅自动匹配。
+    delivery_range: 可选，交货号区间 (min, max)，如 (2424796922, 2424802864)。
     返回 {output_path, stats, previews}。
     """
     os.makedirs(output_dir, exist_ok=True)
@@ -873,7 +994,7 @@ def merge_files(
 
     # 对齐 + 去重 + 过滤非法交货号
     aligned = []
-    seen_keys = set()
+    seen_keys = {}  # dedup_key → index in aligned (dict, for field completion)
     for row in merged_rows:
         aligned_row = {col: (row.get(col) if row.get(col) is not None else "") for col in all_columns}
         aligned_row["_source_file"] = row.get("_source_file", "")
@@ -883,18 +1004,27 @@ def merge_files(
         if not jh_val:
             continue
         xm_val = str(aligned_row.get("项目", "")).strip()
-        if not xm_val:
-            continue
         # 标准化项目号：去掉前导零，使 "000010" 和 "10" 被识别为同一项目
         # 避免不同来源文件（分销报表 vs 跨仓订单）的重复行被重复计算
-        if xm_val.isdigit():
+        if xm_val and xm_val.isdigit():
             xm_normalized = str(int(xm_val))
         else:
             xm_normalized = xm_val
-        dedup_key = (jh_val, xm_normalized)
+        # 项目号为空时用交货号作为去重键（保留项目号缺失的行）
+        dedup_key = (jh_val, xm_normalized) if xm_normalized else (jh_val, "")
         if dedup_key in seen_keys:
+            # 去重时做字段补全：用当前行的非空值补到已有行的空字段上
+            # 解决不同数据源（如邮件产物 vs 总表）字段完整度不同的问题
+            existing = aligned[seen_keys[dedup_key]]
+            for col in all_columns:
+                if col == "_source_file":
+                    continue
+                existing_val = existing.get(col, "")
+                new_val = aligned_row.get(col, "")
+                if (not existing_val or existing_val == "") and new_val:
+                    existing[col] = new_val
             continue
-        seen_keys.add(dedup_key)
+        seen_keys[dedup_key] = len(aligned)
         aligned.append(aligned_row)
 
     # 省份筛选
@@ -902,6 +1032,20 @@ def merge_files(
         filtered = [row for row in aligned if match_row_province(row, prov_list)]
     else:
         filtered = aligned
+
+    # 交货号区间筛选（可选，如只取 08-17 批次）
+    if delivery_range:
+        jhd_min, jhd_max = delivery_range
+        def _in_range(row):
+            jhd = row.get("交货", "")
+            if jhd is None or str(jhd).strip() == "":
+                return False
+            try:
+                v = int(str(jhd).strip())
+                return jhd_min <= v <= jhd_max
+            except (ValueError, TypeError):
+                return False
+        filtered = [row for row in filtered if _in_range(row)]
 
     street_key = None
     for col in all_columns:
@@ -924,7 +1068,10 @@ def merge_files(
     for row in filtered:
         ws3.append([_excel_date(row.get(h, "")) for h in all_columns])
 
-    p4_headers, p4_data, text_dates = build_pivot_by_delivery(filtered)
+    # 读取物流信息（已发运/未发运的 B_ADDRESS1/备注，通过销售凭证关联）
+    logistics_map = read_logistics_map(files_data)
+    
+    p4_headers, p4_data, text_dates = build_pivot_by_delivery(filtered, logistics_map)
     ws4 = wb.create_sheet("交货汇总")
     ws4.append(p4_headers)
     for row in p4_data:
@@ -937,11 +1084,9 @@ def merge_files(
         new_row = list(row)
         # 交货 在 index 5
         delivery = str(new_row[5]).strip() if len(new_row) > 5 and new_row[5] else ""
-        if delivery == "(空白)":
-            # 空白行的数值列清空
-            if len(new_row) > 8:
-                new_row[8] = None
-        elif delivery != "总计":
+        if delivery == "总计":
+            pass  # 总计行保持原样
+        else:
             orig = text_dates.get(delivery, {})
             # 发货日期 在 index 0
             if len(new_row) > 0 and new_row[0] is None and orig.get("发货日期"):
@@ -959,6 +1104,21 @@ def merge_files(
     for row in p2_data:
         ws2.append(row)
 
+    # 生成"奥妙+洗衣粉/皂粉"明细子集和小计表
+    omo_detail_rows, omo_subtotal_rows = build_omo_detail(filtered, all_columns)
+    if omo_detail_rows:
+        ws_omo_detail = wb.create_sheet("奥妙明细")
+        ws_omo_detail.append(output_headers)
+        for row in omo_detail_rows:
+            ws_omo_detail.append([_excel_date(v) for v in row])
+
+        ws_omo_subtotal = wb.create_sheet("奥妙小计")
+        ws_omo_subtotal.append(["", "", ""])  # 前2行空
+        ws_omo_subtotal.append(["", "", ""])
+        ws_omo_subtotal.append(["交货", "求和项:总重量", "求和项:业务量"])
+        for row in omo_subtotal_rows:
+            ws_omo_subtotal.append(row)
+
     day = date_str.replace("-", "") if date_str else datetime.datetime.now().strftime("%Y%m%d")
     short_hash = hashlib.md5(f"{day}_{len(filtered)}_{datetime.datetime.now().strftime('%H%M%S%f')}".encode()).hexdigest()[:8]
     prov_short = "_".join(p.replace("省", "").replace("市", "") for p in prov_list[:3]) if prov_list else "全部"
@@ -973,6 +1133,8 @@ def merge_files(
         "filtered_rows": len(filtered),
         "pivot_delivery_count": len(p4_data),
         "pivot_factory_count": len(p2_data),
+        "omo_detail_count": len(omo_detail_rows),
+        "omo_subtotal_count": len(omo_subtotal_rows),
         "street_column": street_key if street_key else "未找到",
         "provinces": prov_list,
     }

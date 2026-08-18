@@ -1,10 +1,18 @@
 <template>
   <div class="login-page">
-    <!-- 浮动花瓣装饰球 -->
+    <!-- 真实樱花背景 + 写实花瓣飘落 -->
     <div class="bg-deco">
-      <div class="orb s1"></div>
-      <div class="orb s2"></div>
-      <div class="orb s3"></div>
+      <img class="bg-photo" :src="sakuraBg" alt="sakura background" />
+      <div class="petal-layer">
+        <img
+          v-for="p in petals"
+          :key="p.id"
+          class="petal"
+          :src="p.src"
+          alt=""
+          :style="p.style"
+        />
+      </div>
     </div>
 
     <div class="login-wrap">
@@ -86,6 +94,9 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { authApi } from '@/api'
 import { Database, User, Lock, Alert } from "@/utils/icons"
+import sakuraBg from '@/assets/sakura/sakura-bg.webp'
+import petalA from '@/assets/sakura/petal-a.webp'
+import petalB from '@/assets/sakura/petal-b.webp'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -94,6 +105,31 @@ const formRef = ref(null)
 const pwInputRef = ref(null)
 const loading = ref(false)
 const errorMsg = ref('')
+
+/* 真实樱花飘落花瓣 */
+const petalImages = [petalA, petalB]
+const petals = Array.from({ length: 22 }, (_, i) => {
+  const img = petalImages[i % 2]
+  const size = 16 + Math.random() * 26
+  const left = Math.random() * 100
+  const duration = 11 + Math.random() * 13
+  const delay = Math.random() * -22
+  const sway = 35 + Math.random() * 55
+  const rotate = Math.random() * 360
+  return {
+    id: i,
+    src: img,
+    style: {
+      left: `${left}%`,
+      width: `${size}px`,
+      height: `${size}px`,
+      animationDuration: `${duration}s`,
+      animationDelay: `${delay}s`,
+      '--sway': `${sway}px`,
+      '--rotate-start': `${rotate}deg`,
+    }
+  }
+})
 
 const formData = reactive({
   username: '',
@@ -141,13 +177,28 @@ async function handleLogin() {
 <style scoped>
 .login-page {
   width: 100%;
-  height: 100vh;
+  min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow-y: auto;
   overflow-x: hidden;
   position: relative;
+}
+
+.login-page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(135deg, rgba(255,250,252,0.55) 0%, rgba(255,245,248,0.35) 100%);
+  backdrop-filter: blur(1px);
+  pointer-events: none;
+}
+
+[data-theme="dark"] .login-page::before {
+  background: linear-gradient(135deg, rgba(22,15,28,0.82) 0%, rgba(32,20,34,0.72) 100%);
+  backdrop-filter: blur(5px);
 }
 
 .bg-deco {
@@ -158,42 +209,55 @@ async function handleLogin() {
   pointer-events: none;
 }
 
-.orb {
+.bg-photo {
   position: absolute;
-  border-radius: 50%;
-  filter: blur(60px);
-  opacity: 0.35;
-  animation: float-orb 8s ease-in-out infinite;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
 }
 
-.s1 {
-  width: 420px;
-  height: 420px;
-  background: var(--primary-l);
-  top: -80px;
-  left: -60px;
+.petal-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
 }
-.s2 {
-  width: 360px;
-  height: 360px;
-  background: var(--secondary-l);
-  bottom: -60px;
-  right: -40px;
-  animation-delay: 2s;
+
+.petal {
+  position: absolute;
+  top: -60px;
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: fall-sway linear infinite;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.12));
 }
-.s3 {
-  width: 280px;
-  height: 280px;
-  background: #A8C5E8;
-  top: 40%;
-  right: 20%;
-  animation-delay: 4s;
-  opacity: 0.2;
+
+[data-theme="dark"] .petal {
+  filter: brightness(0.75) drop-shadow(0 2px 4px rgba(0,0,0,0.35));
+}
+
+@keyframes fall-sway {
+  0% {
+    transform: translateY(0) translateX(0) rotate(var(--rotate-start));
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.9;
+  }
+  92% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(calc(100vh + 80px)) translateX(var(--sway)) rotate(calc(var(--rotate-start) + 360deg));
+    opacity: 0;
+  }
 }
 
 .login-wrap {
   position: relative;
-  z-index: 1;
+  z-index: 3;
   width: 100%;
   max-width: 420px;
   padding: 20px;
@@ -279,18 +343,6 @@ async function handleLogin() {
   }
   .sub {
     font-size: 11px;
-  }
-  .s1 {
-    width: 280px;
-    height: 280px;
-  }
-  .s2 {
-    width: 240px;
-    height: 240px;
-  }
-  .s3 {
-    width: 180px;
-    height: 180px;
   }
 }
 </style>

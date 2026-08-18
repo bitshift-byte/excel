@@ -1,12 +1,31 @@
 <template>
   <n-layout has-sider class="main-layout">
+    <!-- 真实樱花氛围背景（侧栏玻璃透出） -->
+    <div class="bg-sakura">
+      <img class="bg-photo" :src="sakuraBg" alt="sakura background" />
+    </div>
+
+    <!-- 持续写实花瓣飘落 -->
+    <div class="sakura-fall">
+      <img
+        v-for="p in fallPetals"
+        :key="p.id"
+        class="fall-petal"
+        :src="p.src"
+        alt=""
+        :style="p.style"
+      />
+    </div>
+
     <!-- 登录欢迎动画 -->
     <Transition name="welcome-fade">
       <div v-if="showWelcome" class="welcome-overlay">
-        <div
+        <img
           v-for="(petal, i) in petals"
           :key="i"
           class="sakura-petal"
+          :src="petal.src"
+          alt=""
           :style="petal.style"
         />
         <div class="welcome-card">
@@ -39,21 +58,42 @@
         <!-- 数据合并 -->
         <div class="nav-section">
           <div class="nav-section-title">数据合并</div>
-          <div
-            v-if="userStore.canFileMerge"
-            class="nav-item"
-            :class="{ active: route.name === 'merge' }"
-            @click="navigate('/')"
-          >
+            <div
+              v-if="userStore.canFileMerge"
+              class="nav-item"
+              :class="{ active: route.name === 'merge' }"
+              tabindex="0"
+              role="button"
+              @click="navigate('/')"
+              @keydown.enter="navigate('/')"
+              @keydown.space.prevent="navigate('/')"
+            >
             <n-icon :size="18"><Upload /></n-icon>
             <span>文件合并</span>
           </div>
-          <div
-            v-if="userStore.canRuleManagement"
-            class="nav-item"
-            :class="{ active: route.name === 'rules' }"
-            @click="navigate('/rules')"
-          >
+            <div
+              v-if="userStore.canFileMerge"
+              class="nav-item"
+              :class="{ active: route.name === 'mail-merge' }"
+              tabindex="0"
+              role="button"
+              @click="navigate('/mail-merge')"
+              @keydown.enter="navigate('/mail-merge')"
+              @keydown.space.prevent="navigate('/mail-merge')"
+            >
+            <n-icon :size="18"><Mail /></n-icon>
+            <span>邮件合并</span>
+          </div>
+            <div
+              v-if="userStore.canRuleManagement"
+              class="nav-item"
+              :class="{ active: route.name === 'rules' }"
+              tabindex="0"
+              role="button"
+              @click="navigate('/rules')"
+              @keydown.enter="navigate('/rules')"
+              @keydown.space.prevent="navigate('/rules')"
+            >
             <n-icon :size="18"><Layers /></n-icon>
             <span>规则列表</span>
           </div>
@@ -62,11 +102,15 @@
         <!-- 邮件捞取 -->
         <div v-if="userStore.canMailReader" class="nav-section">
           <div class="nav-section-title">邮件捞取</div>
-          <div
-            class="nav-item"
-            :class="{ active: route.name === 'mail' }"
-            @click="navigate('/mail')"
-          >
+            <div
+              class="nav-item"
+              :class="{ active: route.name === 'mail' }"
+              tabindex="0"
+              role="button"
+              @click="navigate('/mail')"
+              @keydown.enter="navigate('/mail')"
+              @keydown.space.prevent="navigate('/mail')"
+            >
             <n-icon :size="18"><Mail /></n-icon>
             <span>邮件捞取</span>
           </div>
@@ -75,11 +119,15 @@
         <!-- 管理 -->
         <div v-if="userStore.isAdmin" class="nav-section">
           <div class="nav-section-title">管理</div>
-          <div
-            class="nav-item"
-            :class="{ active: route.name === 'admin' }"
-            @click="navigate('/admin')"
-          >
+            <div
+              class="nav-item"
+              :class="{ active: route.name === 'admin' }"
+              tabindex="0"
+              role="button"
+              @click="navigate('/admin')"
+              @keydown.enter="navigate('/admin')"
+              @keydown.space.prevent="navigate('/admin')"
+            >
             <n-icon :size="18"><Settings /></n-icon>
             <span>管理后台</span>
           </div>
@@ -97,6 +145,17 @@
 
       <!-- 底部 -->
       <div class="sidebar-footer">
+        <div class="theme-toggle">
+          <span class="theme-label">🌸 主题</span>
+          <n-switch
+            :value="theme.isDark.value"
+            @update:value="theme.toggle"
+            size="small"
+          >
+            <template #checked>深色</template>
+            <template #unchecked>浅色</template>
+          </n-switch>
+        </div>
         <div v-if="userStore.user" class="user-box">
           <div class="user-avatar gradient-sakura">{{ avatarText }}</div>
           <div class="user-info">
@@ -167,7 +226,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, h, inject } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useMessage } from 'naive-ui'
 import { useUserStore } from '@/stores/user'
@@ -176,11 +235,15 @@ import {
   Settings, Help, LogOut, Refresh
 } from "@/utils/icons"
 import { MenuOutline as Menu } from '@vicons/ionicons5'
-import { useTabScroll } from '@/composables/useTabScroll' 
+import { useTabScroll } from '@/composables/useTabScroll'
+import sakuraBg from '@/assets/sakura/sakura-bg.webp'
+import petalA from '@/assets/sakura/petal-a.webp'
+import petalB from '@/assets/sakura/petal-b.webp'
 const router = useRouter()
 const route = useRoute()
 const message = useMessage()
 const userStore = useUserStore()
+const theme = inject('theme', { isDark: ref(false), toggle: () => {} })
 
 useTabScroll()
 
@@ -234,20 +297,18 @@ const encourage = computed(() => {
 
 function generatePetals(count = 18) {
   const arr = []
-  const colors = ['#F06595', '#FFC2D1', '#FF8FB1', '#FFB3C6', '#F8B4D9']
+  const imgs = [petalA, petalB]
   for (let i = 0; i < count; i++) {
-    const size = 8 + Math.random() * 10
+    const size = 14 + Math.random() * 16
     arr.push({
+      src: imgs[i % 2],
       style: {
         left: `${Math.random() * 100}%`,
-        top: `-20px`,
+        top: `-24px`,
         width: `${size}px`,
         height: `${size}px`,
-        background: colors[Math.floor(Math.random() * colors.length)],
-        animationDuration: `${2.5 + Math.random() * 2}s`,
-        animationDelay: `${Math.random() * 0.8}s`,
-        opacity: String(0.7 + Math.random() * 0.3),
-        transform: `rotate(${Math.random() * 360}deg)`,
+        animationDuration: `${3 + Math.random() * 2.5}s`,
+        animationDelay: `${Math.random() * 1.2}s`,
       }
     })
   }
@@ -292,6 +353,66 @@ onUnmounted(() => {
 <style scoped>
 .main-layout {
   height: 100vh;
+}
+
+/* ---- 真实樱花氛围背景（侧栏玻璃透出） ---- */
+.bg-sakura {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.bg-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: left center;
+  opacity: 0.8;
+}
+
+[data-theme="dark"] .bg-photo {
+  opacity: 0.45;
+}
+
+/* ---- 持续写实花瓣飘落 ---- */
+.sakura-fall {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.fall-petal {
+  position: absolute;
+  top: -60px;
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: fall-sway linear infinite;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.1));
+}
+
+[data-theme="dark"] .fall-petal {
+  filter: brightness(0.8) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
+}
+
+@keyframes fall-sway {
+  0% {
+    transform: translateY(0) translateX(0) rotate(var(--rotate-start));
+    opacity: 0;
+  }
+  8% {
+    opacity: 0.9;
+  }
+  92% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(calc(100vh + 80px)) translateX(var(--sway)) rotate(calc(var(--rotate-start) + 360deg));
+    opacity: 0;
+  }
 }
 
 /* ---- Sidebar (glassmorphism) ---- */
@@ -413,10 +534,29 @@ onUnmounted(() => {
   color: var(--primary);
 }
 
+.nav-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 .sidebar-footer {
   flex-shrink: 0;
   padding: 16px 22px;
   border-top: 1px solid var(--border-l);
+}
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 6px 14px;
+  margin-bottom: 4px;
+}
+
+.theme-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
 }
 
 .user-box {
@@ -632,7 +772,7 @@ onUnmounted(() => {
 
 .sakura-petal {
   position: absolute;
-  border-radius: 50% 0 50% 0;
+  opacity: 0;
   animation-name: petal-fall;
   animation-timing-function: cubic-bezier(.22, 1, .36, 1);
   animation-iteration-count: 1;

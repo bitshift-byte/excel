@@ -116,6 +116,13 @@ export const mailApi = {
   previewFileData: (filename) => api.get(`/api/mail/results/${encodeURIComponent(filename)}/preview`),
 }
 
+// 邮件合并
+export const mailMergeApi = {
+  run: (formData) => api.upload('/api/mail-merge/run', formData),
+  download: () => '/api/mail-merge/download',
+  mailResults: () => api.get('/api/mail-merge/mail-results'),
+}
+
 // ===================== 管理后台（代理到认证服务） =====================
 
 export const adminApi = {

@@ -21,7 +21,176 @@ except ImportError:
     _db = None
 
 
-# ---------- 纯逻辑（可测试） ----------
+# ---------- 工厂标识识别（STDD: 纯逻辑，不依赖外部状态） ----------
+
+# 工厂关键字 → 目标工厂值
+# 按邮件中出现的标识（主题/附件名/正文）自动识别实际发货工厂
+# 只匹配具体工厂编号，不匹配仓库名称缩写（RDC1/RDC2等）
+FACTORY_KEYWORD_MAP = {
+    "701": "701",
+    "801": "801",
+    "901": "901",
+    "YG": "YG",
+}
+
+
+def detect_factory_override(subject: str, attachment_names: list, body_text: str) -> str:
+    """从邮件主题、附件名、正文中识别工厂关键字，返回目标工厂值。
+
+    匹配优先级：
+    1. 附件名中的工厂关键字（最精确，单附件级别）
+    2. 主题中的工厂关键字
+    3. 正文中的工厂关键字（最宽松，可能误匹配）
+
+    工厂关键字优先级：701 > 801 > 901 > YG
+    如果未识别到，返回空字符串。
+    """
+    # 层级1：附件名（最精确）
+    att_combined = " ".join(attachment_names or []).upper()
+    for keyword, target in FACTORY_KEYWORD_MAP.items():
+        if keyword.upper() in att_combined:
+            return target
+
+    # 层级2：主题
+    if subject:
+        subj_upper = subject.upper()
+        for keyword, target in FACTORY_KEYWORD_MAP.items():
+            if keyword.upper() in subj_upper:
+                return target
+
+    # 层级3：正文（最宽松，只取前2000字符）
+    if body_text:
+        body_upper = body_text[:2000].upper()
+        for keyword, target in FACTORY_KEYWORD_MAP.items():
+            if keyword.upper() in body_upper:
+                return target
+
+    return ""
+
+
+def extract_mail_body(msg) -> str:
+    """从 email.message.Message 中提取纯文本正文"""
+    body = ""
+    if msg.is_multipart():
+        for part in msg.walk():
+            ct = part.get_content_type()
+            if ct == "text/plain":
+                charset = part.get_content_charset() or "utf-8"
+                payload = part.get_payload(decode=True)
+                if payload:
+                    try:
+                        body += payload.decode(charset, errors="replace")
+                    except (LookupError, UnicodeDecodeError):
+                        body += payload.decode("utf-8", errors="replace")
+    else:
+        ct = msg.get_content_type()
+        if ct == "text/plain":
+            charset = msg.get_content_charset() or "utf-8"
+            payload = msg.get_payload(decode=True)
+            if payload:
+                try:
+                    body = payload.decode(charset, errors="replace")
+                except (LookupError, UnicodeDecodeError):
+                    body = payload.decode("utf-8", errors="replace")
+    return body
+
+
+def apply_factory_override(output_path: str, file_factory_map: dict, collected_dir: str) -> int:
+    """对合并产物做后处理：将指定附件来源的数据行的「工厂」字段覆盖为目标值。
+
+    file_factory_map: {附件原始文件名: 目标工厂值}
+    collected_dir: 临时文件目录（下载的附件在这里）
+    返回修改的行数。
+
+    逻辑：
+    1. 从临时目录中读取每个附件的交货号集合
+    2. 打开输出文件，遍历「全量数据」和「筛选数据」sheet
+    3. 根据交货号匹配行，覆盖工厂字段
+    """
+    if not file_factory_map:
+        return 0
+
+    # 步骤1：从临时文件中收集每个附件的交货号 → 目标工厂值映射
+    import openpyxl
+    jh_to_factory = {}  # 交货号 → 目标工厂值
+
+    for att_name, target_factory in file_factory_map.items():
+        # 在 collected_dir 中查找匹配的文件（文件名带序号前缀 N_）
+        found = False
+        for fname in os.listdir(collected_dir):
+            # 去掉序号前缀后比较
+            clean_name = re.sub(r"^\d+_", "", fname)
+            if clean_name == att_name or fname.endswith("_" + att_name) or att_name in fname:
+                fpath = os.path.join(collected_dir, fname)
+                try:
+                    sheets = read_all_sheets_for_override(fpath)
+                    for sname, (headers, data_rows) in sheets.items():
+                        jh_col = None
+                        factory_col = None
+                        for i, h in enumerate(headers):
+                            hs = str(h).strip() if h else ""
+                            if hs in ("交货", "交货号"):
+                                jh_col = i
+                            if hs == "工厂":
+                                factory_col = i
+                        if jh_col is not None:
+                            for row in data_rows:
+                                jh_val = str(row[jh_col]).strip() if jh_col < len(row) and row[jh_col] else ""
+                                if jh_val and jh_val.isdigit():
+                                    jh_to_factory[jh_val] = target_factory
+                    found = True
+                except Exception:
+                    pass
+        if not found:
+            log(f"警告: 未找到附件 {att_name} 的临时文件")
+
+    if not jh_to_factory:
+        return 0
+
+    log(f"工厂标识: {len(jh_to_factory)} 个交货号需覆盖工厂值")
+
+    # 步骤2：打开输出文件，按交货号覆盖工厂字段
+    # 覆盖所有含工厂列的sheet：全量数据、筛选数据、交货汇总、交货汇总_文本日期、工厂交货透视
+    wb = openpyxl.load_workbook(output_path)
+    modified_count = 0
+
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        header_row = [cell.value for cell in ws[1]]
+
+        factory_col = None
+        jh_col = None
+        for i, h in enumerate(header_row):
+            if h and str(h).strip() == "工厂":
+                factory_col = i
+            if h and str(h).strip() in ("交货", "交货号"):
+                jh_col = i
+
+        if factory_col is None or jh_col is None:
+            continue
+
+        for row_idx in range(2, ws.max_row + 1):
+            jh_val = ws.cell(row=row_idx, column=jh_col + 1).value
+            if jh_val is None:
+                continue
+            jh_str = str(jh_val).strip()
+            if jh_str in jh_to_factory:
+                ws.cell(row=row_idx, column=factory_col + 1).value = jh_to_factory[jh_str]
+                modified_count += 1
+
+    wb.save(output_path)
+    wb.close()
+    return modified_count
+
+
+def read_all_sheets_for_override(filepath: str):
+    """读取Excel文件的所有sheet，返回 {sheet_name: (headers, data_rows)}
+    复用 merger 的逻辑但独立调用，避免循环依赖。
+    """
+    import sys as _sys
+    _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from merger import read_all_sheets
+    return read_all_sheets(filepath)
 
 def matches_keywords(subject: str, keywords: List[str]) -> bool:
     if not keywords:
@@ -141,15 +310,21 @@ def search_mails(imap: imaplib.IMAP4_SSL, since_date: datetime.date, before_date
     return results
 
 
-def download_excel_attachments(imap: imaplib.IMAP4_SSL, folder: str, uid: bytes, dest_dir: str, start_idx: int = 0) -> list:
+def download_excel_attachments(imap: imaplib.IMAP4_SSL, folder: str, uid: bytes, dest_dir: str, start_idx: int = 0) -> tuple:
+    """下载邮件Excel附件，返回 (saved_files, body_text)。
+
+    saved_files: [(path, filename), ...]
+    body_text: 邮件正文纯文本（用于工厂关键字识别）
+    """
     typ, _ = imap.select(f'"{folder}"', readonly=True)
     if typ != "OK":
-        return []
+        return [], ""
     typ, msg_data = imap.uid("fetch", uid, "(RFC822)")
     if typ != "OK":
-        return []
+        return [], ""
     raw = msg_data[0][1]
     msg = email.message_from_bytes(raw)
+    body_text = extract_mail_body(msg)
     saved = []
     idx = start_idx
     for part in msg.walk():
@@ -168,7 +343,7 @@ def download_excel_attachments(imap: imaplib.IMAP4_SSL, folder: str, uid: bytes,
             f.write(payload)
         saved.append((path, decoded))
         idx += 1
-    return saved
+    return saved, body_text
 
 
 # ---------- 主流程 ----------
@@ -290,6 +465,7 @@ def process_once(cfg: dict, force: bool = False) -> int:
         log(f"共 {len(items)} 封邮件，其中新邮件 {len(new_items)} 封")
         handled = 0
         all_files = []
+        _factory_override_map = {}  # 附件名 → 目标工厂值
         collect_dir = tempfile.TemporaryDirectory()
         collect_path = collect_dir.name
         file_idx = 0
@@ -301,7 +477,7 @@ def process_once(cfg: dict, force: bool = False) -> int:
                 if typ == "OK" and data and data[0]:
                     m = email.message_from_bytes(data[0][1])
                     subject = decode_subject(m.get("Subject", ""))
-                files = download_excel_attachments(imap, folder, uid, collect_path, file_idx)
+                files, body_text = download_excel_attachments(imap, folder, uid, collect_path, file_idx)
                 if not files:
                     log(f"跳过（无 Excel 附件）: {subject}")
                     continue
@@ -312,7 +488,23 @@ def process_once(cfg: dict, force: bool = False) -> int:
                     all_files.extend([path for path, _ in files])
                     processed.add(f"{folder}::{uid.decode()}")
                     handled += 1
-                    log(f"匹配: {subject} → {len(files)} 个附件")
+                    # 工厂标识识别：逐个附件检测工厂关键字
+                    # 多附件邮件：只从附件名+主题匹配（正文对多附件太宽泛）
+                    # 单附件邮件：可以用正文匹配
+                    detected_any = False
+                    multi_attachment = len(files) > 1
+                    for _, att_name in files:
+                        # 多附件时不用正文，单附件时用正文
+                        body_for_detect = "" if multi_attachment else body_text
+                        factory_target = detect_factory_override(subject, [att_name], body_for_detect)
+                        if factory_target:
+                            _factory_override_map[att_name] = factory_target
+                            detected_any = True
+                    if detected_any:
+                        overrides = ", ".join(f"{k}→{v}" for k, v in _factory_override_map.items() if k in attachment_names)
+                        log(f"匹配: {subject} → {len(files)} 个附件 [{overrides}]")
+                    else:
+                        log(f"匹配: {subject} → {len(files)} 个附件")
                 else:
                     log(f"跳过（主题不匹配，含附件）: {subject}")
                 task_mails.append({
@@ -333,6 +525,11 @@ def process_once(cfg: dict, force: bool = False) -> int:
                 date_str=target.strftime("%Y-%m-%d"),
             )
             log(f"合并完成: 全量 {result['stats']['total_merged_rows']} 行，筛选 {result['stats']['filtered_rows']} 行")
+            # 工厂字段后处理：根据邮件识别到的工厂关键字覆盖工厂值
+            if _factory_override_map:
+                modified = apply_factory_override(result["output_path"], _factory_override_map, collect_path)
+                if modified:
+                    log(f"工厂标识覆盖: 修改 {modified} 行")
         else:
             log("无匹配附件，跳过合并")
         if not force:

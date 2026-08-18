@@ -167,7 +167,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """认证中间件 — 仅保护 /api/* 接口，SPA 页面由 Vue Router 处理认证"""
 
     # SPA 页面路径：服务器直接返回 index.html，Vue Router 在前端处理登录跳转
-    SPA_PAGE_PATHS = {"/", "/login", "/mail", "/mail/results", "/admin", "/rules"}
+    SPA_PAGE_PATHS = {"/", "/login", "/mail", "/mail/results", "/admin", "/rules", "/mail-merge"}
     PUBLIC_API_PATHS = {"/api/login", "/favicon.ico", "/health"}
     PUBLIC_PREFIXES = ("/static", "/assets", "/docs", "/openapi.json", "/redoc")
 

@@ -31,6 +31,12 @@ const routes = [
         meta: { requiresAuth: true, feature: 'mail_reader' },
       },
       {
+        path: 'mail-merge',
+        name: 'mail-merge',
+        component: () => import('@/views/MailMerge.vue'),
+        meta: { requiresAuth: true, feature: 'file_merge' },
+      },
+      {
         path: 'admin',
         name: 'admin',
         component: () => import('@/views/Admin.vue'),

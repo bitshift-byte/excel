@@ -213,6 +213,40 @@
         </div>
       </n-card>
 
+      <!-- 交货号区间筛选 -->
+      <n-card hoverable style="margin-bottom: 16px">
+        <template #header>
+          <div class="card-header-row">
+            <span>交货号区间</span>
+            <n-tag size="small" round :type="deliveryMin || deliveryMax ? 'warning' : 'default'">
+              {{ deliveryMin || deliveryMax ? '已设置' : '不筛选' }}
+            </n-tag>
+          </div>
+        </template>
+
+        <div class="delivery-range-row">
+          <n-input-number
+            v-model:value="deliveryMin"
+            placeholder="最小交货号"
+            :show-button="false"
+            size="small"
+            style="width: 200px"
+            clearable
+          />
+          <span class="range-sep">—</span>
+          <n-input-number
+            v-model:value="deliveryMax"
+            placeholder="最大交货号"
+            :show-button="false"
+            size="small"
+            style="width: 200px"
+            clearable
+          />
+          <n-button size="small" quaternary @click="deliveryMin = null; deliveryMax = null">清除</n-button>
+        </div>
+        <p class="delivery-hint">可选：填入交货号区间（如 2424796922 ~ 2424802864），只合并该区间内的数据</p>
+      </n-card>
+
       <div class="step-actions">
         <n-button @click="goStep(1)">← 重新上传</n-button>
         <n-button type="primary" size="large" :loading="merging" @click="processMerge">
@@ -228,9 +262,9 @@
         <!-- 统计 -->
         <div class="stats-grid">
           <div class="stat">
-            <div class="stat-label">选中Sheet</div>
-            <div class="stat-value">{{ stats.selected_sheets || 0 }}</div>
-            <div class="stat-desc">个参与合并</div>
+            <div class="stat-label">输出Sheet</div>
+            <div class="stat-value">{{ stats.sheet_count || 0 }}</div>
+            <div class="stat-desc">个工作表</div>
           </div>
           <div class="stat accent">
             <div class="stat-label">合并行数</div>
@@ -238,15 +272,23 @@
             <div class="stat-desc">行数据</div>
           </div>
           <div class="stat amber">
-            <div class="stat-label">合并列数</div>
-            <div class="stat-value">{{ stats.total_columns || 0 }}</div>
-            <div class="stat-desc">列</div>
-          </div>
-          <div class="stat purple">
             <div class="stat-label">{{ stats.provinces && stats.provinces.length > 0 ? '筛选结果' : '合并结果' }}</div>
             <div class="stat-value">{{ stats.filtered_rows || 0 }}</div>
             <div class="stat-desc">{{ stats.provinces && stats.provinces.length > 0 ? stats.provinces.join('、') : '全部数据' }}</div>
           </div>
+          <div class="stat purple">
+            <div class="stat-label">交货汇总</div>
+            <div class="stat-value">{{ stats.pivot_delivery_count || 0 }}</div>
+            <div class="stat-desc">个交货号</div>
+          </div>
+        </div>
+
+        <!-- 奥妙统计 -->
+        <div v-if="stats.omo_detail_count > 0" class="omo-stats-bar">
+          <n-icon :size="16" color="var(--secondary)"><Layers /></n-icon>
+          <span>奥妙明细 <strong>{{ stats.omo_detail_count }}</strong> 行</span>
+          <span class="omo-divider">|</span>
+          <span>奥妙小计 <strong>{{ stats.omo_subtotal_count }}</strong> 个交货号</span>
         </div>
 
         <!-- 预览 -->
@@ -316,6 +358,10 @@ const selectedRuleId = ref('')
 const regions = ref([])
 const provSearch = ref('')
 const selectedProvinces = ref(new Set())
+
+// 交货号区间
+const deliveryMin = ref(null)
+const deliveryMax = ref(null)
 
 const PROV_GROUPS = {
   '华北': ['北京市', '天津市', '河北省', '山西省', '内蒙古自治区'],
@@ -573,6 +619,8 @@ async function processMerge() {
     fd.append('selected_sheets', JSON.stringify(selected))
     fd.append('provinces', JSON.stringify([...selectedProvinces.value]))
     if (selectedRuleId.value) fd.append('rule_id', selectedRuleId.value)
+    if (deliveryMin.value) fd.append('delivery_min', String(deliveryMin.value))
+    if (deliveryMax.value) fd.append('delivery_max', String(deliveryMax.value))
 
     const data = await fileApi.process(fd)
     if (data.status === 'success') {
@@ -1037,6 +1085,50 @@ onMounted(() => {
   margin-top: 2px;
 }
 
+/* 奥妙统计条 */
+.omo-stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  background: var(--secondary-bg);
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.omo-stats-bar strong {
+  color: var(--secondary-d);
+  font-size: 15px;
+}
+
+.omo-divider {
+  color: var(--text-4);
+  margin: 0 4px;
+}
+
+/* 交货号区间 */
+.delivery-range-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.range-sep {
+  font-size: 14px;
+  color: var(--text-4);
+  font-weight: 600;
+}
+
+.delivery-hint {
+  font-size: 12px;
+  color: var(--text-4);
+  margin-top: 8px;
+}
+
 /* Preview */
 .preview-section {
   margin-top: 24px;
@@ -1101,19 +1193,6 @@ onMounted(() => {
 :deep(.n-card.n-card--hoverable:hover) {
   box-shadow: var(--shadow-lg);
   border-color: var(--primary-l);
-}
-
-/* Primary buttons use sakura gradient */
-:deep(.n-button.n-button--primary-type) {
-  background: var(--grad-sakura);
-  border: none;
-  box-shadow: 0 4px 12px rgba(240, 101, 149, 0.25);
-  font-weight: 700;
-}
-
-:deep(.n-button.n-button--primary-type:hover) {
-  box-shadow: 0 6px 16px rgba(240, 101, 149, 0.35);
-  transform: translateY(-1px);
 }
 
 :deep(.n-upload-dragger) {
