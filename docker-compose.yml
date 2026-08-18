@@ -4,7 +4,7 @@ services:
     container_name: lx-web
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "80:8000"
     volumes:
       - ./data:/app/data
       - ./output:/app/output
