@@ -21,6 +21,9 @@ async def get_mail_config(request: Request):
     """获取邮件配置（从认证服务获取，桌面应用只读）。
     provinces 字段按用户隔离：优先使用管理员分配给该用户的省份，
     如果用户没有分配省份，则回退到全局 mail_config 中的省份。"""
+    user = auth.get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录或登录已过期")
     cfg = auth.get_mail_config()
     safe_cfg = {k: v for k, v in cfg.items() if k != "auth_code"} if cfg else {}
     # 按用户隔离省份
@@ -54,7 +57,9 @@ async def run_mail_once(request: Request):
 
 
 @router.get("/results")
-async def mail_results():
+async def mail_results(request: Request):
+    if not auth.get_current_user(request):
+        raise HTTPException(status_code=401, detail="未登录或登录已过期")
     files = []
     if os.path.isdir(config.OUTPUT_DIR):
         for f in os.listdir(config.OUTPUT_DIR):
@@ -71,7 +76,9 @@ async def mail_results():
 
 
 @router.get("/results/{filename}")
-async def download_mail_result(filename: str):
+async def download_mail_result(filename: str, request: Request):
+    if not auth.get_current_user(request):
+        raise HTTPException(status_code=401, detail="未登录或登录已过期")
     safe = os.path.basename(filename)
     path = os.path.join(config.OUTPUT_DIR, safe)
     if not os.path.isfile(path):
@@ -84,7 +91,9 @@ async def download_mail_result(filename: str):
 
 
 @router.get("/results/{filename}/preview")
-async def preview_mail_result(filename: str):
+async def preview_mail_result(filename: str, request: Request):
+    if not auth.get_current_user(request):
+        raise HTTPException(status_code=401, detail="未登录或登录已过期")
     safe = os.path.basename(filename)
     path = os.path.join(config.OUTPUT_DIR, safe)
     if not os.path.isfile(path):
@@ -121,5 +130,8 @@ async def preview_mail_result(filename: str):
 
 
 @router.get("/tasks")
-async def mail_tasks():
+async def mail_tasks(request: Request):
+    if not auth.get_current_user(request):
+        raise HTTPException(status_code=401, detail="未登录或登录已过期")
     return JSONResponse(content={"status": "success", "tasks": mail_reader.load_tasks()})
+

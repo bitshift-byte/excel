@@ -111,7 +111,7 @@ export const mailApi = {
   run: (date) => api.post('/api/mail/run', { date }),
   results: () => api.get('/api/mail/results'),
   tasks: () => api.get('/api/mail/tasks'),
-  resultFile: (filename) => `/api/mail/results/${filename}`,
+  resultFile: (filename) => `/api/mail/results/${encodeURIComponent(filename)}`,
   previewFile: (filename) => `/api/mail/results/${filename}/preview`,
   previewFileData: (filename) => api.get(`/api/mail/results/${encodeURIComponent(filename)}/preview`),
 }
@@ -145,12 +145,12 @@ export const adminApi = {
   deleteRule: (id) => api.del(`/api/admin/rules/${id}`),
 
   // 用户规则分配
-  getUserRules: (username) => api.get(`/api/admin/users/${username}/rules`),
-  assignUserRules: (username, ruleIds) => api.put(`/api/admin/users/${username}/rules`, { rule_ids: ruleIds }),
+  getUserRules: (username) => api.get(`/api/admin/users/${encodeURIComponent(username)}/rules`),
+  assignUserRules: (username, ruleIds) => api.put(`/api/admin/users/${encodeURIComponent(username)}/rules`, { rule_ids: ruleIds }),
 
   // 用户省份分配
-  getUserProvinces: (username) => api.get(`/api/admin/users/${username}/provinces`),
-  assignUserProvinces: (username, provinces) => api.put(`/api/admin/users/${username}/provinces`, { provinces }),
+  getUserProvinces: (username) => api.get(`/api/admin/users/${encodeURIComponent(username)}/provinces`),
+  assignUserProvinces: (username, provinces) => api.put(`/api/admin/users/${encodeURIComponent(username)}/provinces`, { provinces }),
 
 
 }

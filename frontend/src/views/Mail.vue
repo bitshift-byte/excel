@@ -6,7 +6,7 @@
         <p class="page-desc">从邮箱捞取附件并自动合并处理</p>
       </div>
       <n-space>
-        <n-button type="primary" @click="showRunModal = true" :loading="running">
+        <n-button v-if="userStore.isAdmin" type="primary" @click="showRunModal = true" :loading="running">
           <template #icon><n-icon><Zap /></n-icon></template>
           立即执行
         </n-button>
@@ -228,10 +228,12 @@
 <script setup>
 import { ref, reactive, h, onMounted } from 'vue'
 import { useMessage, NButton, NSpace, NIcon, NTag, NTabs, NTabPane, NSpin, NEmpty } from 'naive-ui'
+import { useUserStore } from '@/stores/user'
 import { mailApi } from '@/api'
 import { Mail, Zap, Download, Refresh, Layers, ChevronForward, Eye, Grid } from '@/utils/icons'
 
 const message = useMessage()
+const userStore = useUserStore()
 
 const config = ref({})
 const running = ref(false)
