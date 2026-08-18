@@ -310,8 +310,7 @@
       </template>
     </n-modal>
 
-    <!-- ==================== 删除确认 ==================== -->
-    <n-modal v-model:show="delModal.show" preset="dialog" :title="delModal.title" :content="delModal.content" positive-text="确认删除" negative-text="取消" type="error" @positive-click="delModal.onConfirm" />
+    <!-- 删除确认已改用 dialog.warning() -->
   </div>
 </template>
 
@@ -691,26 +690,24 @@ async function unbindDevice(username) {
   }
 }
 
-const delModal = reactive({
-  show: false,
-  title: '',
-  content: '',
-  onConfirm: () => {},
-})
+// delModal 已移除，改用 dialog.warning()
 
 function confirmDeleteUser(user) {
-  delModal.title = '删除用户'
-  delModal.content = `确定要删除用户「${user.name || user.username}」吗？此操作不可撤销。`
-  delModal.onConfirm = async () => {
-    const data = await adminApi.deleteUser(user.username)
-    if (data.status === 'success') {
-      message.success('用户已删除')
-      loadUsers()
-    } else {
-      message.error(data.detail || '删除失败')
-    }
-  }
-  delModal.show = true
+  dialog.warning({
+    title: '删除用户',
+    content: `确定要删除用户「${user.name || user.username}」吗？此操作不可撤销。`,
+    positiveText: '确认删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      const data = await adminApi.deleteUser(user.username)
+      if (data.status === 'success') {
+        message.success('用户已删除')
+        loadUsers()
+      } else {
+        message.error(data.detail || '删除失败')
+      }
+    },
+  })
 }
 
 // ============== 邮件配置 ==============
@@ -986,18 +983,21 @@ async function saveProvinceAssign() {
 }
 
 function confirmDeleteRule(rule) {
-  delModal.title = '删除规则'
-  delModal.content = `确定要删除规则「${rule.name}」吗？`
-  delModal.onConfirm = async () => {
-    const data = await adminApi.deleteRule(rule.id)
-    if (data.status === 'success') {
-      message.success('规则已删除')
-      loadRules()
-    } else {
-      message.error(data.detail || '删除失败')
-    }
-  }
-  delModal.show = true
+  dialog.warning({
+    title: '删除规则',
+    content: `确定要删除规则「${rule.name}」吗？`,
+    positiveText: '确认删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      const data = await adminApi.deleteRule(rule.id)
+      if (data.status === 'success') {
+        message.success('规则已删除')
+        loadRules()
+      } else {
+        message.error(data.detail || '删除失败')
+      }
+    },
+  })
 }
 
 // ============== 初始化 ==============
