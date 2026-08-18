@@ -51,6 +51,19 @@ async def lifespan(app):
     database.init_db()
     print("[app] 数据库已初始化")
 
+    # 自动迁移：如果存在旧 JSON 配置文件，自动迁移到 SQLite
+    import os as _os
+    _auth_config = _os.path.join(config.DATA_DIR, "auth_config.json")
+    _app_config = _os.path.join(config.DATA_DIR, "app_config.json")
+    if (_os.path.exists(_auth_config) or _os.path.exists(_app_config)):
+        # 检查是否已经迁移过（数据库有用户但没迁移标记）
+        try:
+            from migrate_json_to_sqlite import migrate
+            migrate(force=False)
+            print("[app] JSON→SQLite 自动迁移完成")
+        except Exception as e:
+            print(f"[app] 自动迁移失败（可能已迁移过）: {e}")
+
     # 加载应用配置
     app_cfg = auth.fetch_app_config()
     import time as _time

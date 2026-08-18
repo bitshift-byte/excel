@@ -43,18 +43,14 @@ async def login_api(request: Request):
             status_code=403,
         )
 
-    # 单设备登录检查
+    # 登录前先清除旧设备绑定（"最后登录者获胜"策略）
+    # 这样同一用户换浏览器/设备登录时不会被拒
+    database.clear_active_login(username)
+
     device_id = body.get("device_id", "").strip()
     # 网页版：前端传浏览器指纹作为 device_id
     browser_fp = body.get("browser_fingerprint", "").strip()
     effective_device_id = browser_fp or device_id
-
-    allow, reason = database.check_device_login(username, effective_device_id)
-    if not allow:
-        return JSONResponse(
-            {"status": "error", "detail": reason},
-            status_code=409,
-        )
 
     # 创建 session
     token = secrets.token_hex(16)
