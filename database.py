@@ -554,27 +554,9 @@ def delete_sessions_for_user(username: str):
         conn.execute("DELETE FROM sessions WHERE username = ?", (username,))
 
 
-# ===================== 单设备登录 =====================
-
-DEVICE_LOGIN_TIMEOUT = 1800  # 30 分钟
-
-
-def check_device_login(username: str, device_id: str) -> tuple:
-    """检查单设备登录。返回 (allow, reason)"""
-    with get_db() as conn:
-        row = conn.execute("SELECT * FROM active_logins WHERE username = ?", (username,)).fetchone()
-    if not row:
-        return True, None
-    elapsed = time.time() - row["login_time"]
-    if elapsed >= DEVICE_LOGIN_TIMEOUT:
-        # 超时自动释放
-        with get_db() as conn:
-            conn.execute("DELETE FROM active_logins WHERE username = ?", (username,))
-        return True, None
-    # 同一设备允许
-    if device_id and row["device_id"] == device_id:
-        return True, None
-    return False, "该账号已在其他设备登录，请先在该设备退出登录，或联系管理员解绑"
+# ===================== 活跃登录记录 =====================
+# 记录用户最后一次登录的设备信息，用于管理后台展示设备状态
+# 注意：同一用户多设备同时登录是允许的，新登录不会踢掉旧 session
 
 
 def set_active_login(username: str, token: str, device_id: str = ""):
@@ -601,12 +583,10 @@ def get_device_status(username: str) -> dict:
     if not row:
         return {"bound": False}
     elapsed = time.time() - row["login_time"]
-    remaining = max(0, DEVICE_LOGIN_TIMEOUT - elapsed)
     return {
         "bound": True,
         "login_time": row["login_time"],
         "elapsed_seconds": int(elapsed),
-        "remaining_seconds": int(remaining),
     }
 
 
