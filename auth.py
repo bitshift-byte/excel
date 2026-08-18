@@ -125,16 +125,25 @@ def require_admin_user(request: Request) -> dict:
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    """拦截需要认证的路由，未登录重定向到 /login"""
+    """认证中间件 — 仅保护 /api/* 接口，SPA 页面由 Vue Router 处理认证"""
 
-    PUBLIC_PATHS = {"/login", "/api/login", "/favicon.ico", "/health"}
-    PUBLIC_PREFIXES = ("/static", "/assets", "/admin/login", "/admin/dashboard", "/admin/static")
+    # SPA 页面路径：服务器直接返回 index.html，Vue Router 在前端处理登录跳转
+    SPA_PAGE_PATHS = {"/", "/login", "/mail", "/mail/results", "/admin", "/rules"}
+    PUBLIC_API_PATHS = {"/api/login", "/favicon.ico", "/health"}
+    PUBLIC_PREFIXES = ("/static", "/assets", "/docs", "/openapi.json", "/redoc")
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        if path in self.PUBLIC_PATHS or any(path.startswith(p) for p in self.PUBLIC_PREFIXES):
+
+        # SPA 页面直接放行（pages.py 路由会处理重定向或返回 index.html）
+        if path in self.SPA_PAGE_PATHS:
             return await call_next(request)
 
+        # 公开 API 和静态资源
+        if path in self.PUBLIC_API_PATHS or any(path.startswith(p) for p in self.PUBLIC_PREFIXES):
+            return await call_next(request)
+
+        # 已登录用户
         token = request.cookies.get(config.SESSION_COOKIE)
         if token and token in state.SESSIONS:
             username = state.SESSIONS[token]["username"]
@@ -153,14 +162,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
                             {"status": "error", "detail": reason or "账号已被禁用"},
                             status_code=403,
                         )
-                    return RedirectResponse("/login", status_code=302)
+                    # SPA 页面：让 Vue 自己处理（跳转到登录页）
+                    return await call_next(request)
                 # 发送心跳（刷新设备绑定活跃时间）
                 database.heartbeat(username)
                 state.SESSION_LAST_CHECK[token] = now
 
             return await call_next(request)
 
+        # 未登录：API 返回 401 JSON，其他路径交给 pages.py（返回 SPA）
         if path.startswith("/api/"):
             return JSONResponse({"status": "error", "detail": "未登录或会话已过期"}, status_code=401)
 
-        return RedirectResponse("/login", status_code=302)
+        # 非API路径未登录：让请求通过到 pages.py，Vue Router 会处理重定向到登录页
+        return await call_next(request)
