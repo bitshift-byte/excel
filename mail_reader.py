@@ -34,6 +34,22 @@ FACTORY_KEYWORD_MAP = {
 }
 
 
+def _strip_emails(text: str) -> str:
+    """移除文本中的邮箱地址，避免邮箱名中的数字被误匹配为工厂关键字。
+    例如 hf901sys@pgl-world.com 中的 901 不应被识别为工厂901。
+    """
+    return re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', '', text)
+
+
+def _factory_keyword_match(keyword: str, text: str) -> bool:
+    """检查文本中是否包含工厂关键字（独立词匹配）。
+    要求关键字前后不是数字也不是小数点，避免从数字中间截取
+    （如 23.901 吨里的 901、293023.90154.452 里的 901 被误匹配）。
+    """
+    pat = r'(?<![0-9.])' + re.escape(keyword) + r'(?![0-9.])'
+    return bool(re.search(pat, text, re.IGNORECASE))
+
+
 def detect_factory_override(subject: str, attachment_names: list, body_text: str) -> str:
     """从邮件主题、附件名、正文中识别工厂关键字，返回目标工厂值。
 
@@ -48,21 +64,23 @@ def detect_factory_override(subject: str, attachment_names: list, body_text: str
     # 层级1：附件名（最精确）
     att_combined = " ".join(attachment_names or []).upper()
     for keyword, target in FACTORY_KEYWORD_MAP.items():
-        if keyword.upper() in att_combined:
+        if _factory_keyword_match(keyword, att_combined):
             return target
 
     # 层级2：主题
     if subject:
         subj_upper = subject.upper()
         for keyword, target in FACTORY_KEYWORD_MAP.items():
-            if keyword.upper() in subj_upper:
+            if _factory_keyword_match(keyword, subj_upper):
                 return target
 
     # 层级3：正文（最宽松，只取前2000字符）
+    # 注意：先移除邮箱地址，避免 hf901sys@xxx 中的 901 被误匹配
     if body_text:
-        body_upper = body_text[:2000].upper()
+        body_clean = _strip_emails(body_text[:2000])
+        body_upper = body_clean.upper()
         for keyword, target in FACTORY_KEYWORD_MAP.items():
-            if keyword.upper() in body_upper:
+            if _factory_keyword_match(keyword, body_upper):
                 return target
 
     return ""
