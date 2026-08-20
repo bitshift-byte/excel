@@ -27,6 +27,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 import config
 import state
@@ -100,6 +101,7 @@ if config.USE_VUE_FRONTEND:
         app.mount("/assets", StaticFiles(directory=_vue_assets), name="vue-assets")
 
 # 认证中间件
+app.add_middleware(GZipMiddleware, minimum_size=512)  # gzip压缩静态资源，1.1MB JS→316KB
 app.add_middleware(auth.AuthMiddleware)
 
 # 注册 AdminError 异常处理
