@@ -569,8 +569,9 @@ def read_so_map(files_data: Dict) -> Dict[str, Dict]:
             for i, h in enumerate(headers):
                 h_map[str(h).strip() if h else ""] = i
             ci_order = h_map.get("客户订单号")
-            ci_notes = h_map.get("NOTES2")
-            ci_addr = h_map.get("B_ADDRESS1")
+            # NOTES2 / NOTE2, B_ADDRESS1 / 地址 是同义列名变体（SO vs OMR）
+            ci_notes = h_map.get("NOTES2", h_map.get("NOTE2"))
+            ci_addr = h_map.get("B_ADDRESS1", h_map.get("地址"))
             # 必须同时含三列才认定为 SO 文件
             if ci_order is None or ci_notes is None or ci_addr is None:
                 continue
