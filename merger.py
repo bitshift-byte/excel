@@ -372,7 +372,7 @@ def _try_parse_date(val):
     return None
 
 
-def build_pivot_by_delivery(filtered_rows: list, logistics_map: Optional[Dict] = None) -> Tuple[list, list, dict]:
+def build_pivot_by_delivery(filtered_rows: list, logistics_map: Optional[Dict] = None, so_map: Optional[Dict] = None) -> Tuple[list, list, dict]:
     """Sheet4/Sheet5: 按交货号汇总透视表（从 Sheet3 筛选数据构建）
     列: 交货, 销售凭证, 运达方, 运达方的名字, 送达方地点, 工厂, 街道, 发货日期, 交货日期, 求和项:交货量, 求和项:总重量, 求和项:业务量, B_ADDRESS1, 备注, 1, 2
 
@@ -380,7 +380,7 @@ def build_pivot_by_delivery(filtered_rows: list, logistics_map: Optional[Dict] =
     - 数值列：SUM 求和
     - 日期为 datetime → Sheet4 保持 datetime，街道保持原值
     - 日期为文本格式(str) → Sheet4 中日期=None，街道=None（Excel 透视表丢弃文本日期行字段）
-    - B_ADDRESS1/备注：通过 logistics_map（已发运/未发运的销售凭证→物流信息）LEFT JOIN 取出
+    - B_ADDRESS1/备注：先查 logistics_map（已发运/未发运，key=销售凭证），未命中的再查 so_map（SO文件，key=交货号）
     - 列1/列2（O/P 子合计）：该交货下"奥妙+洗衣粉/皂粉"类别的总重量/业务量子合计
 
     Sheet5 规则：Sheet4 的副本，但 None 的日期/街道用 Sheet3 原始文本值回填
@@ -479,6 +479,16 @@ def build_pivot_by_delivery(filtered_rows: list, logistics_map: Optional[Dict] =
             if logi:
                 addr1 = logi.get("B_ADDRESS1", "") or ""
                 remark = logi.get("备注", "") or ""
+        # 2. 如果 logistics_map 未命中，用交货号查 SO map
+        # SO 文件的"客户订单号"字段值 == 本表的"交货"号
+        if so_map:
+            delivery_no = str(entry["交货"]).strip() if entry["交货"] else ""
+            so_data = so_map.get(delivery_no)
+            if so_data:
+                if not addr1:
+                    addr1 = so_data.get("B_ADDRESS1", "") or ""
+                if not remark:
+                    remark = so_data.get("备注", "") or ""
         # O/P 子合计：奥妙+洗衣粉/皂粉的总重量/业务量
         omo = omo_subtotals.get(entry["交货"])
         o_val = round(omo["zzl"], 3) if omo else None
@@ -541,6 +551,43 @@ def read_logistics_map(files_data: Dict) -> Dict[str, Dict]:
                     "_from_sent": is_sent,
                 }
     return logistics_map
+
+
+def read_so_map(files_data: Dict) -> Dict[str, Dict]:
+    """从 SO 文件构建 客户订单号(=交货号) → {B_ADDRESS1, 备注} 映射。
+
+    SO 文件特征：
+    - sheet 名为 Sheet1/Sheet2 等（非"已发运"/"未发运"）
+    - 表头同时含"客户订单号"、"NOTES2"、"B_ADDRESS1"
+    - JOIN key: "客户订单号"（值 == 产出物的"交货"号）
+    - NOTES2 → 备注, B_ADDRESS1 → B_ADDRESS1
+    """
+    so_map = {}
+    for fname, sheets in files_data.items():
+        for sname, (headers, data_rows) in sheets.items():
+            h_map = {}
+            for i, h in enumerate(headers):
+                h_map[str(h).strip() if h else ""] = i
+            ci_order = h_map.get("客户订单号")
+            ci_notes = h_map.get("NOTES2")
+            ci_addr = h_map.get("B_ADDRESS1")
+            # 必须同时含三列才认定为 SO 文件
+            if ci_order is None or ci_notes is None or ci_addr is None:
+                continue
+            for row in data_rows:
+                order_no = str(row[ci_order]).strip() if ci_order < len(row) and row[ci_order] is not None else ""
+                if not order_no:
+                    continue
+                # 有值优先：已存在且有 B_ADDRESS1 值则不覆盖
+                if order_no in so_map and so_map[order_no].get("B_ADDRESS1"):
+                    continue
+                notes_val = row[ci_notes] if ci_notes < len(row) else None
+                addr_val = row[ci_addr] if ci_addr < len(row) else None
+                so_map[order_no] = {
+                    "B_ADDRESS1": addr_val if addr_val is not None else "",
+                    "备注": notes_val if notes_val is not None else "",
+                }
+    return so_map
 
 
 def build_omo_detail(filtered_rows: list, std_headers: list) -> Tuple[list, list]:
@@ -1070,8 +1117,10 @@ def merge_files(
 
     # 读取物流信息（已发运/未发运的 B_ADDRESS1/备注，通过销售凭证关联）
     logistics_map = read_logistics_map(files_data)
-    
-    p4_headers, p4_data, text_dates = build_pivot_by_delivery(filtered, logistics_map)
+    # 读取 SO 文件的 NOTES2(→备注)/B_ADDRESS1，通过交货号(=客户订单号)关联
+    so_map = read_so_map(files_data)
+
+    p4_headers, p4_data, text_dates = build_pivot_by_delivery(filtered, logistics_map, so_map)
     ws4 = wb.create_sheet("交货汇总")
     ws4.append(p4_headers)
     for row in p4_data:
