@@ -27,3 +27,9 @@ docs/superpowers/
 /tmp/
 *.log
 frontend/login-preview.png
+
+# macOS
+.DS_Store
+
+# Workbuddy memory (temp)
+.workbuddy/
