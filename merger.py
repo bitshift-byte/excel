@@ -684,8 +684,8 @@ def read_kuacang_map(files_data: Dict) -> Dict[str, Dict]:
     - sheet 名为 "跨仓结果仓库回传"（允许前后空白）
     - 表头含 "OBD"、"客户订单号"、"备注"、"仓库备注"
     - OBD 值 == 产出物的"交货"号
-    - 客户订单号 → B_ADDRESS1
-    - 备注 + 仓库备注 + 工单号 + 填写人 → 备注（拼接，跳过空值）
+    - 客户订单号 + 工单号 → B_ADDRESS1（拼接，跳过空值）
+    - 备注 + 仓库备注 + 填写人 → 备注（拼接，跳过空值）
 
     优先级：已存在且有 B_ADDRESS1 值的条目不被覆盖 B_ADDRESS1；
     已存在且有备注的条目不被覆盖备注；空字段可被后续行补全。
@@ -723,7 +723,16 @@ def read_kuacang_map(files_data: Dict) -> Dict[str, Dict]:
                 if not obd or obd == "0":
                     continue
                 cust_po = str(row[ci_cust]).strip() if ci_cust < len(row) and row[ci_cust] is not None else ""
-                # 拼接 备注 + 仓库备注（跳过空值）
+                # B_ADDRESS1 = 客户订单号 + 工单号（跳过空值）
+                addr_parts = []
+                if cust_po:
+                    addr_parts.append(cust_po)
+                if ci_gdh is not None and ci_gdh < len(row):
+                    v = row[ci_gdh]
+                    if v is not None and str(v).strip():
+                        addr_parts.append(str(v).strip())
+                addr1 = " | ".join(addr_parts) if addr_parts else ""
+                # 备注 = 备注 + 仓库备注 + 填写人（跳过空值）
                 parts = []
                 if ci_remark is not None and ci_remark < len(row):
                     v = row[ci_remark]
@@ -733,28 +742,24 @@ def read_kuacang_map(files_data: Dict) -> Dict[str, Dict]:
                     v = row[ci_wh_remark]
                     if v is not None and str(v).strip():
                         parts.append(str(v).strip())
-                if ci_gdh is not None and ci_gdh < len(row):
-                    v = row[ci_gdh]
-                    if v is not None and str(v).strip():
-                        parts.append(f"工单号:{str(v).strip()}")
                 if ci_txr is not None and ci_txr < len(row):
                     v = row[ci_txr]
                     if v is not None and str(v).strip():
-                        parts.append(f"填写人:{str(v).strip()}")
+                        parts.append(str(v).strip())
                 remark = " | ".join(parts) if parts else ""
                 # 客户订单号和备注都为空，跳过此行（无有用数据）
-                if not cust_po and not remark:
+                if not addr1 and not remark:
                     continue
                 # 已存在的条目：补全空字段，不覆盖已有值
                 if obd in kuacang_map:
                     existing = kuacang_map[obd]
-                    if not existing.get("B_ADDRESS1") and cust_po:
-                        existing["B_ADDRESS1"] = cust_po
+                    if not existing.get("B_ADDRESS1") and addr1:
+                        existing["B_ADDRESS1"] = addr1
                     if not existing.get("备注") and remark:
                         existing["备注"] = remark
                 else:
                     kuacang_map[obd] = {
-                        "B_ADDRESS1": cust_po,
+                        "B_ADDRESS1": addr1,
                         "备注": remark,
                     }
     return kuacang_map
