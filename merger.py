@@ -8,6 +8,7 @@ import datetime
 from datetime import timezone, timedelta
 from collections import OrderedDict
 from typing import List, Dict, Tuple, Optional
+from copy import copy
 
 import openpyxl
 import xlrd
@@ -1565,6 +1566,14 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
     # ---- 4. 追加明细 sheet（所有新交货号的所有行）----
     # 总表明细有 37 列，邮件数据有 34 列
     # 列映射：总表[0]=交货, 总表[1]=空, 总表[2..34]=邮件[1..33], 总表[35..36]=空
+    # 样式：从总表已有行中找到相同工厂值的行作为模板，复制其 fill/font/alignment/number_format
+    from openpyxl.styles import PatternFill, Font, Alignment
+    # 建立 工厂值 → 模板行号 映射（工厂在第13列/M）
+    detail_factory_template = {}  # factory_str -> row_num
+    for r in range(2, max_row + 1):
+        fv = ws_detail.cell(row=r, column=13).value
+        if fv is not None and str(fv) not in detail_factory_template:
+            detail_factory_template[str(fv)] = r
     appended_count = 0
     for mail_row in mail_rows:
         if not mail_row or mail_row[0] is None:
@@ -1576,11 +1585,27 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
         # 新交货号，追加到明细 sheet（不加入 existing_jiaohuo，允许同交货号多行追加）
         max_row += 1
         ws_detail.cell(row=max_row, column=1, value=mail_row[0])
+        # col B: VLOOKUP 公式（与原有一致）
+        ws_detail.cell(row=max_row, column=2, value=f"=VLOOKUP(A{max_row},Sheet5!A:C,3,0)")
         for mail_col in range(1, min(34, len(mail_row))):
             master_col = mail_col + 2
             val = mail_row[mail_col]
             if val is not None:
                 ws_detail.cell(row=max_row, column=master_col, value=val)
+
+        # 复制样式：找到同工厂值的模板行，逐列复制 fill/font/alignment/number_format
+        factory_val = ws_detail.cell(row=max_row, column=13).value
+        template_row = detail_factory_template.get(str(factory_val)) if factory_val else None
+        if template_row:
+            for col in range(1, ws_detail.max_column + 1):
+                t_cell = ws_detail.cell(row=template_row, column=col)
+                n_cell = ws_detail.cell(row=max_row, column=col)
+                if t_cell.has_style:
+                    n_cell.fill = copy(t_cell.fill)
+                    n_cell.font = copy(t_cell.font)
+                    n_cell.alignment = copy(t_cell.alignment)
+                    n_cell.number_format = t_cell.number_format
+                    n_cell.border = copy(t_cell.border)
 
         appended_count += 1
 
@@ -1593,6 +1618,12 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
         for row in ws_weifayun.iter_rows(min_row=2, values_only=False):
             if any(c.value is not None for c in row):
                 wfy_max_row = row[0].row
+        # 建立 库区(工厂)值 → 模板行号 映射（库区在第15列/O）
+        wfy_factory_template = {}  # factory_str -> row_num
+        for r in range(2, wfy_max_row + 1):
+            fv = ws_weifayun.cell(row=r, column=15).value
+            if fv is not None and str(fv) not in wfy_factory_template:
+                wfy_factory_template[str(fv)] = r
 
         for s_row in summary_rows:
             if not s_row or len(s_row) < 6:
@@ -1638,6 +1669,20 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
             ws_weifayun.cell(row=wfy_max_row, column=21, value=s_row[13])
             # col21 备注 = 交货汇总 col12 B_ADDRESS1（交换！）
             ws_weifayun.cell(row=wfy_max_row, column=22, value=s_row[12])
+
+            # 复制样式：找到同库区(工厂)值的模板行，逐列复制 fill/font/alignment/number_format
+            factory_val = ws_weifayun.cell(row=wfy_max_row, column=15).value
+            template_row = wfy_factory_template.get(str(factory_val)) if factory_val else None
+            if template_row:
+                for col in range(1, ws_weifayun.max_column + 1):
+                    t_cell = ws_weifayun.cell(row=template_row, column=col)
+                    n_cell = ws_weifayun.cell(row=wfy_max_row, column=col)
+                    if t_cell.has_style:
+                        n_cell.fill = copy(t_cell.fill)
+                        n_cell.font = copy(t_cell.font)
+                        n_cell.alignment = copy(t_cell.alignment)
+                        n_cell.number_format = t_cell.number_format
+                        n_cell.border = copy(t_cell.border)
 
             existing_weifayun_orders.add(jiaohuo)
             appended_weifayun_count += 1
