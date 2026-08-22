@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse, FileResponse
 import config
 import auth
 import mail_reader
+from merger import fromtimestamp_cn
 
 router = APIRouter(prefix="/api/mail", tags=["mail"])
 
@@ -68,7 +69,7 @@ async def mail_results(request: Request):
                 st = os.stat(path)
                 files.append({
                     "filename": f,
-                    "mtime": datetime.datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                    "mtime": fromtimestamp_cn(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
                     "size": st.st_size,
                 })
     files.sort(key=lambda x: x["mtime"], reverse=True)

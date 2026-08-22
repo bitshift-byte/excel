@@ -13,7 +13,7 @@ from email.header import decode_header
 from typing import List, Set
 from collections import deque
 
-from merger import merge_files, _base_dir
+from merger import merge_files, _base_dir, now_cn, fromtimestamp_cn
 
 try:
     import database as _db
@@ -370,7 +370,7 @@ _logs = deque(maxlen=200)  # 内存日志，最近 200 条
 
 
 def log(msg: str) -> None:
-    line = f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}"
+    line = f"[{now_cn().strftime('%H:%M:%S')}] {msg}"
     _logs.append(line)
     print(f"[mail_reader] {line}", flush=True)
 
@@ -429,7 +429,7 @@ def clean_output_files(output_dir: str) -> None:
     if not os.path.isdir(output_dir):
         return
     files = [f for f in os.listdir(output_dir) if f.startswith("邮件合并") and f.endswith(".xlsx")]
-    today = datetime.datetime.now().strftime("%Y%m%d")
+    today = now_cn().strftime("%Y%m%d")
     by_date = {}
     for f in files:
         m = re.search(r"(\d{8})", f)
@@ -453,9 +453,9 @@ def process_once(cfg: dict, force: bool = False) -> int:
         try:
             target = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
         except ValueError:
-            target = datetime.date.today()
+            target = now_cn().date()
     else:
-        target = datetime.date.today()
+        target = now_cn().date()
     since = target
     before = target + datetime.timedelta(days=1)
     # 使用数据库存储已处理 UID（如果没有数据库，回退到文件）
@@ -557,7 +557,7 @@ def process_once(cfg: dict, force: bool = False) -> int:
                 _db.add_processed_uids(processed)
         if task_mails:
             task = {
-                "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "time": now_cn().strftime("%Y-%m-%d %H:%M:%S"),
                 "mails": task_mails,
             }
             tasks = load_tasks()

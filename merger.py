@@ -5,6 +5,7 @@ import re
 import json
 import hashlib
 import datetime
+from datetime import timezone, timedelta
 from collections import OrderedDict
 from typing import List, Dict, Tuple, Optional
 
@@ -309,6 +310,19 @@ def match_row_province(row: dict, provinces: list) -> bool:
 
 
 
+# 中国时区 UTC+8
+_CN_TZ = timezone(timedelta(hours=8))
+
+def now_cn() -> datetime.datetime:
+    """返回中国时区(UTC+8)的当前时间"""
+    return datetime.datetime.now(_CN_TZ)
+
+def fromtimestamp_cn(ts: float) -> datetime.datetime:
+    """将时间戳转为中国时区(UTC+8)的 datetime"""
+    return datetime.datetime.fromtimestamp(ts, tz=_CN_TZ)
+
+
+
 def _excel_date(val):
     """将 datetime 值转为 date-only，避免 Excel 显示时分秒"""
     if isinstance(val, datetime.datetime):
@@ -320,9 +334,9 @@ def serialize_cell(val):
     if val is None:
         return ""
     if isinstance(val, datetime.datetime):
-        return val.strftime("%Y-%m-%d")
+        return val.strftime("%Y/%m/%d")
     if isinstance(val, datetime.date):
-        return val.strftime("%Y-%m-%d")
+        return val.strftime("%Y/%m/%d")
     return str(val)
 
 
@@ -341,15 +355,15 @@ def _format_date_text(val) -> str:
     if val is None or val == "":
         return ""
     if isinstance(val, datetime.datetime):
-        return val.strftime("%Y.%m.%d")
+        return val.strftime("%Y/%m/%d")
     if isinstance(val, datetime.date):
-        return val.strftime("%Y.%m.%d")
+        return val.strftime("%Y/%m/%d")
     s = str(val).strip()
     # 尝试解析常见的日期格式
     for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d"]:
         try:
             dt = datetime.datetime.strptime(s, fmt)
-            return dt.strftime("%Y.%m.%d")
+            return dt.strftime("%Y/%m/%d")
         except ValueError:
             pass
     return s
@@ -1381,11 +1395,19 @@ def merge_files(
         for row in omo_subtotal_rows:
             ws_omo_subtotal.append(row)
 
-    day = date_str.replace("-", "") if date_str else datetime.datetime.now().strftime("%Y%m%d")
-    short_hash = hashlib.md5(f"{day}_{len(filtered)}_{datetime.datetime.now().strftime('%H%M%S%f')}".encode()).hexdigest()[:8]
+    day = date_str.replace("-", "") if date_str else now_cn().strftime("%Y%m%d")
+    short_hash = hashlib.md5(f"{day}_{len(filtered)}_{now_cn().strftime('%H%M%S%f')}".encode()).hexdigest()[:8]
     prov_short = "_".join(p.replace("省", "").replace("市", "") for p in prov_list[:3]) if prov_list else "全部"
     output_filename = f"{output_prefix}_{prov_short}_{day}_{short_hash}.xlsx"
     output_path = os.path.join(output_dir, output_filename)
+
+    # 统一设置所有 sheet 中日期单元格的显示格式为斜杠 yyyy/m/d
+    _DATE_FMT = "yyyy/m/d"
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, (datetime.datetime, datetime.date)):
+                    cell.number_format = _DATE_FMT
     wb.save(output_path)
     wb.close()
 

@@ -16,6 +16,7 @@ import openpyxl
 import config
 import auth
 from merger import (
+    fromtimestamp_cn,
     read_all_sheets,
     match_columns_to_rule,
     serialize_cell,
@@ -59,7 +60,7 @@ async def list_mail_results(request: Request):
 
                 files.append({
                     "filename": f,
-                    "mtime": datetime.datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                    "mtime": fromtimestamp_cn(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
                     "size": st.st_size,
                     "sheets": sheet_info,
                 })
