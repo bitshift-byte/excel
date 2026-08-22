@@ -1627,6 +1627,14 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
             existing_weifayun_orders.add(jiaohuo)
             appended_weifayun_count += 1
 
+    # 统一设置所有 sheet 中日期单元格的显示格式为斜杠 yyyy/m/d
+    _DATE_FMT = "yyyy/m/d"
+    for ws in master_wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, (datetime.datetime, datetime.date)):
+                    cell.number_format = _DATE_FMT
+
     master_wb.save(output_path)
     master_wb.close()
 
