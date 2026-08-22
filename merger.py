@@ -685,7 +685,7 @@ def read_kuacang_map(files_data: Dict) -> Dict[str, Dict]:
     - 表头含 "OBD"、"客户订单号"、"备注"、"仓库备注"
     - OBD 值 == 产出物的"交货"号
     - 客户订单号 → B_ADDRESS1
-    - 备注 + 仓库备注 → 备注（拼接，跳过空值）
+    - 备注 + 仓库备注 + 工单号 + 填写人 → 备注（拼接，跳过空值）
 
     优先级：已存在且有 B_ADDRESS1 值的条目不被覆盖 B_ADDRESS1；
     已存在且有备注的条目不被覆盖备注；空字段可被后续行补全。
@@ -709,6 +709,8 @@ def read_kuacang_map(files_data: Dict) -> Dict[str, Dict]:
                 continue
             ci_remark = h_map.get("备注")
             ci_wh_remark = h_map.get("仓库备注")
+            ci_gdh = h_map.get("工单号")
+            ci_txr = h_map.get("填写人")
 
             for row in data_rows:
                 obd_raw = row[ci_obd] if ci_obd < len(row) and row[ci_obd] is not None else ""
@@ -731,6 +733,14 @@ def read_kuacang_map(files_data: Dict) -> Dict[str, Dict]:
                     v = row[ci_wh_remark]
                     if v is not None and str(v).strip():
                         parts.append(str(v).strip())
+                if ci_gdh is not None and ci_gdh < len(row):
+                    v = row[ci_gdh]
+                    if v is not None and str(v).strip():
+                        parts.append(f"工单号:{str(v).strip()}")
+                if ci_txr is not None and ci_txr < len(row):
+                    v = row[ci_txr]
+                    if v is not None and str(v).strip():
+                        parts.append(f"填写人:{str(v).strip()}")
                 remark = " | ".join(parts) if parts else ""
                 # 客户订单号和备注都为空，跳过此行（无有用数据）
                 if not cust_po and not remark:

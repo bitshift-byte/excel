@@ -31,7 +31,7 @@ KC_HEADERS = (
 )
 
 
-def _kc_row(cust_po, remark, obd, wh_remark=""):
+def _kc_row(cust_po, remark, obd, wh_remark="", gdh="", txr=""):
     """Build a 跨仓订单 data row tuple."""
     row = [None] * len(KC_HEADERS)
     row[1] = cust_po
@@ -40,6 +40,8 @@ def _kc_row(cust_po, remark, obd, wh_remark=""):
     row[18] = obd
     row[21] = None
     row[22] = wh_remark
+    row[23] = gdh if gdh else None
+    row[24] = txr if txr else None
     return tuple(row)
 
 
@@ -575,3 +577,138 @@ def test_build_pivot_logistics_addr_kuacang_remark_cross_fill():
     # kuacang values should NOT appear
     assert "KC_ADDR" not in str(row[12])
     assert "KC_REMARK" not in str(row[13])
+
+
+# =====================================================================
+# RED 17: 工单号 + 填写人 appended to 备注 when 备注/仓库备注 are empty
+# =====================================================================
+
+def test_read_kuacang_map_gdh_txr_when_remark_empty():
+    """When 备注 and 仓库备注 are empty but 工单号+填写人 exist,
+    they should appear in the 备注 field."""
+    files_data = {
+        "跨仓订单.xlsx": {
+            "跨仓结果仓库回传": (KC_HEADERS, [
+                _kc_row("PO18061214260821001-1", "", "2424827180", gdh="R_20260821_019", txr="HFCDC.CML"),
+            ]),
+        }
+    }
+    result = read_kuacang_map(files_data)
+    entry = result["2424827180"]
+    assert "R_20260821_019" in entry["备注"]
+    assert "HFCDC.CML" in entry["备注"]
+
+
+# =====================================================================
+# RED 18: 工单号 + 填写人 appended alongside existing 备注/仓库备注
+# =====================================================================
+
+def test_read_kuacang_map_gdh_txr_with_existing_remarks():
+    """When 备注 and 仓库备注 exist AND 工单号+填写人 also exist,
+    all four parts should be concatenated."""
+    files_data = {
+        "跨仓订单.xlsx": {
+            "跨仓结果仓库回传": (KC_HEADERS, [
+                _kc_row("PO123", "配额会释放", "2424827207", "无库存", gdh="R_20260821_019", txr="HFCDC.CML"),
+            ]),
+        }
+    }
+    result = read_kuacang_map(files_data)
+    entry = result["2424827207"]
+    assert "配额会释放" in entry["备注"]
+    assert "无库存" in entry["备注"]
+    assert "R_20260821_019" in entry["备注"]
+    assert "HFCDC.CML" in entry["备注"]
+
+
+# =====================================================================
+# RED 19: Only 工单号 (no 填写人)
+# =====================================================================
+
+def test_read_kuacang_map_gdh_only():
+    """When only 工单号 exists (填写人 is None/empty),
+    工单号 should still appear in 备注."""
+    files_data = {
+        "跨仓订单.xlsx": {
+            "跨仓结果仓库回传": (KC_HEADERS, [
+                _kc_row("PO123", "", "2424827207", gdh="R_20260821_019", txr=""),
+            ]),
+        }
+    }
+    result = read_kuacang_map(files_data)
+    entry = result["2424827207"]
+    assert "R_20260821_019" in entry["备注"]
+    assert "工单号" in entry["备注"]
+
+
+# =====================================================================
+# RED 20: Only 填写人 (no 工单号)
+# =====================================================================
+
+def test_read_kuacang_map_txr_only():
+    """When only 填写人 exists (工单号 is None/empty),
+    填写人 should still appear in 备注."""
+    files_data = {
+        "跨仓订单.xlsx": {
+            "跨仓结果仓库回传": (KC_HEADERS, [
+                _kc_row("PO123", "", "2424827207", gdh="", txr="HFCDC.CML"),
+            ]),
+        }
+    }
+    result = read_kuacang_map(files_data)
+    entry = result["2424827207"]
+    assert "HFCDC.CML" in entry["备注"]
+    assert "填写人" in entry["备注"]
+
+
+# =====================================================================
+# RED 21: Empty 工单号 and 填写人 — should not add them to 备注
+# =====================================================================
+
+def test_read_kuacang_map_gdh_txr_both_empty():
+    """When both 工单号 and 填写人 are empty/None,
+    备注 should only contain existing 备注/仓库备注 parts."""
+    files_data = {
+        "跨仓订单.xlsx": {
+            "跨仓结果仓库回传": (KC_HEADERS, [
+                _kc_row("PO123", "配额会释放", "2424827207", "无库存", gdh="", txr=""),
+            ]),
+        }
+    }
+    result = read_kuacang_map(files_data)
+    entry = result["2424827207"]
+    assert entry["备注"] == "配额会释放 | 无库存"
+
+
+# =====================================================================
+# RED 22: build_pivot fills 备注 with 工单号+填写人 from kuacang_map
+# =====================================================================
+
+def test_build_pivot_fills_remark_with_gdh_txr():
+    """build_pivot_by_delivery should include 工单号+填写人 from kuacang_map
+    in the 备注 column when logistics_map and so_map miss."""
+    filtered_rows = [
+        {
+            "交货": "2424827180", "项目": "10", "交货量": 32,
+            "总重量": 0.16, "业务量": 0.521, "工厂": "801",
+            "销售凭证": "5507040770", "运达方": "18011338",
+            "运达方的名字": "朝批方盛", "送达方地点": "汝城县",
+            "街道": "湖南省郴州市汝城县", "发货日期": datetime.datetime(2026, 8, 22),
+            "交货日期": datetime.datetime(2026, 8, 28), "描述": "奥妙洗衣粉",
+        },
+    ]
+    logistics_map = {}
+    so_map = {}
+    kuacang_map = {
+        "2424827180": {
+            "B_ADDRESS1": "QJDCP20260821BW跨仓03-8271",
+            "备注": "工单号:R_20260821_019 | 填写人:HFCDC.CML",
+        }
+    }
+    headers, result, _ = build_pivot_by_delivery(
+        filtered_rows, logistics_map, so_map, kuacang_map
+    )
+    row = [r for r in result if str(r[5]) == "2424827180"][0]
+    assert row[12] == "QJDCP20260821BW跨仓03-8271"
+    assert "R_20260821_019" in str(row[13])
+    assert "HFCDC.CML" in str(row[13])
