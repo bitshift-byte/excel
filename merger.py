@@ -1610,6 +1610,7 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
         appended_count += 1
 
     # ---- 5. 追加未发运 sheet（从交货汇总，B_ADDRESS1/备注交换）----
+    # 新行按到货城市分组，每个城市连续放在一起，城市间用空行分隔
     appended_weifayun_count = 0
     if summary_rows and "未发运" in master_wb.sheetnames:
         ws_weifayun = master_wb["未发运"]
@@ -1625,6 +1626,9 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
             if fv is not None and str(fv) not in wfy_factory_template:
                 wfy_factory_template[str(fv)] = r
 
+        # 先收集所有新行数据（尚未写入），按城市分组
+        new_rows_by_city = {}  # city_str -> list of s_row
+        city_order = []  # 保持城市首次出现顺序
         for s_row in summary_rows:
             if not s_row or len(s_row) < 6:
                 continue
@@ -1639,53 +1643,64 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
             if jiaohuo in existing_weifayun_orders or jiaohuo in existing_yifayun_orders:
                 continue
 
-            wfy_max_row += 1
-            # 字段映射（交货汇总 → 未发运），B_ADDRESS1/备注交换
-            # col0 发货日期 → col0 下单日期
-            ws_weifayun.cell(row=wfy_max_row, column=1, value=s_row[0])
-            # col1 交货日期 → col1 需求日期
-            ws_weifayun.cell(row=wfy_max_row, column=2, value=s_row[1])
-            # col2 送达方地点 → col2 到货城市
-            ws_weifayun.cell(row=wfy_max_row, column=3, value=s_row[2])
-            # col3 运达方 → col3 客户代码
-            ws_weifayun.cell(row=wfy_max_row, column=4, value=s_row[3])
-            # col4 销售凭证 → col4 销售凭证
-            ws_weifayun.cell(row=wfy_max_row, column=5, value=s_row[4])
-            # col5 交货 → col5 订单号
-            ws_weifayun.cell(row=wfy_max_row, column=6, value=s_row[5])
-            # col9 客户名称 = 交货汇总 col6 运达方的名字
-            ws_weifayun.cell(row=wfy_max_row, column=10, value=s_row[6])
-            # col10 客户地址 = 交货汇总 col7 街道
-            ws_weifayun.cell(row=wfy_max_row, column=11, value=s_row[7])
-            # col11 数量 = 交货汇总 col8 求和项:交货量
-            ws_weifayun.cell(row=wfy_max_row, column=12, value=s_row[8])
-            # col12 吨位 = 交货汇总 col9 求和项:总重量
-            ws_weifayun.cell(row=wfy_max_row, column=13, value=s_row[9])
-            # col13 体积 = 交货汇总 col10 求和项:业务量
-            ws_weifayun.cell(row=wfy_max_row, column=14, value=s_row[10])
-            # col14 库区 = 交货汇总 col11 工厂
-            ws_weifayun.cell(row=wfy_max_row, column=15, value=s_row[11])
-            # col20 B_ADDRESS1 = 交货汇总 col13 备注（交换！）
-            ws_weifayun.cell(row=wfy_max_row, column=21, value=s_row[13])
-            # col21 备注 = 交货汇总 col12 B_ADDRESS1（交换！）
-            ws_weifayun.cell(row=wfy_max_row, column=22, value=s_row[12])
-
-            # 复制样式：找到同库区(工厂)值的模板行，逐列复制 fill/font/alignment/number_format
-            factory_val = ws_weifayun.cell(row=wfy_max_row, column=15).value
-            template_row = wfy_factory_template.get(str(factory_val)) if factory_val else None
-            if template_row:
-                for col in range(1, ws_weifayun.max_column + 1):
-                    t_cell = ws_weifayun.cell(row=template_row, column=col)
-                    n_cell = ws_weifayun.cell(row=wfy_max_row, column=col)
-                    if t_cell.has_style:
-                        n_cell.fill = copy(t_cell.fill)
-                        n_cell.font = copy(t_cell.font)
-                        n_cell.alignment = copy(t_cell.alignment)
-                        n_cell.number_format = t_cell.number_format
-                        n_cell.border = copy(t_cell.border)
-
+            city = str(s_row[2]).strip() if s_row[2] is not None else ""
+            if city not in new_rows_by_city:
+                new_rows_by_city[city] = []
+                city_order.append(city)
+            new_rows_by_city[city].append(s_row)
             existing_weifayun_orders.add(jiaohuo)
-            appended_weifayun_count += 1
+
+        # 按城市分组写入，城市间插入空行分隔
+        for city in city_order:
+            for s_row in new_rows_by_city[city]:
+                wfy_max_row += 1
+                # 字段映射（交货汇总 → 未发运），B_ADDRESS1/备注交换
+                # col0 发货日期 → col0 下单日期
+                ws_weifayun.cell(row=wfy_max_row, column=1, value=s_row[0])
+                # col1 交货日期 → col1 需求日期
+                ws_weifayun.cell(row=wfy_max_row, column=2, value=s_row[1])
+                # col2 送达方地点 → col2 到货城市
+                ws_weifayun.cell(row=wfy_max_row, column=3, value=s_row[2])
+                # col3 运达方 → col3 客户代码
+                ws_weifayun.cell(row=wfy_max_row, column=4, value=s_row[3])
+                # col4 销售凭证 → col4 销售凭证
+                ws_weifayun.cell(row=wfy_max_row, column=5, value=s_row[4])
+                # col5 交货 → col5 订单号
+                ws_weifayun.cell(row=wfy_max_row, column=6, value=s_row[5])
+                # col9 客户名称 = 交货汇总 col6 运达方的名字
+                ws_weifayun.cell(row=wfy_max_row, column=10, value=s_row[6])
+                # col10 客户地址 = 交货汇总 col7 街道
+                ws_weifayun.cell(row=wfy_max_row, column=11, value=s_row[7])
+                # col11 数量 = 交货汇总 col8 求和项:交货量
+                ws_weifayun.cell(row=wfy_max_row, column=12, value=s_row[8])
+                # col12 吨位 = 交货汇总 col9 求和项:总重量
+                ws_weifayun.cell(row=wfy_max_row, column=13, value=s_row[9])
+                # col13 体积 = 交货汇总 col10 求和项:业务量
+                ws_weifayun.cell(row=wfy_max_row, column=14, value=s_row[10])
+                # col14 库区 = 交货汇总 col11 工厂
+                ws_weifayun.cell(row=wfy_max_row, column=15, value=s_row[11])
+                # col20 B_ADDRESS1 = 交货汇总 col13 备注（交换！）
+                ws_weifayun.cell(row=wfy_max_row, column=21, value=s_row[13])
+                # col21 备注 = 交货汇总 col12 B_ADDRESS1（交换！）
+                ws_weifayun.cell(row=wfy_max_row, column=22, value=s_row[12])
+
+                # 复制样式：找到同库区(工厂)值的模板行，逐列复制 fill/font/alignment/number_format
+                factory_val = ws_weifayun.cell(row=wfy_max_row, column=15).value
+                template_row = wfy_factory_template.get(str(factory_val)) if factory_val else None
+                if template_row:
+                    for col in range(1, ws_weifayun.max_column + 1):
+                        t_cell = ws_weifayun.cell(row=template_row, column=col)
+                        n_cell = ws_weifayun.cell(row=wfy_max_row, column=col)
+                        if t_cell.has_style:
+                            n_cell.fill = copy(t_cell.fill)
+                            n_cell.font = copy(t_cell.font)
+                            n_cell.alignment = copy(t_cell.alignment)
+                            n_cell.number_format = t_cell.number_format
+                            n_cell.border = copy(t_cell.border)
+
+                appended_weifayun_count += 1
+            # 城市间插入空行分隔（最后一个城市后不加）
+            wfy_max_row += 1
 
     # 统一日期格式 + 列宽
     normalize_date_formats(master_wb)
