@@ -21,6 +21,7 @@ from merger import (
     serialize_cell,
     merge_files,
     load_rules,
+    select_source_sheets,
     SAMPLE_ROWS,
 )
 
@@ -128,11 +129,7 @@ async def run_merge(
     # 分析所有 sheet，区分「源数据 sheet」和「结果产物 sheet」
     # 邮件产物的「筛选数据」是按省份筛选后的明细数据，应作为数据源参与合并
     # 「全量数据」是全国数据，不能直接当数据源（会引入非目标省份的数据）
-    # 其他结果产物（交货汇总等）也排除，避免数据翻倍
-    RESULT_SHEET_NAMES = {
-        "全量数据", "交货汇总", "交货汇总_文本日期",
-        "工厂交货透视", "奥妙明细", "奥妙小计",
-    }
+    # 其他结果产物（交货汇总、数据透析等）也排除，避免数据翻倍
     sheets_map = {}
     for fp in file_paths:
         sheets = read_all_sheets(fp)
@@ -146,33 +143,11 @@ async def run_merge(
                 "row_count": len(data_rows),
             }
 
-    # 自动选中：只选总表中的「明细」「已发运」「未发运」sheet
-    # 排除邮件产物中已经是结果产物的 sheet
-    selected_keys = []
-    for key, info in sheets_map.items():
-        sn = info["sheet_name"]
-        # 排除结果产物 sheet
-        if sn in RESULT_SHEET_NAMES:
-            continue
-        # 选中明细型 sheet（含"交货"列且行数多）
-        headers_str = [str(h) if h else "" for h in info["headers"]]
-        has_jiaohuo = any("交货" in h for h in headers_str)
-        if has_jiaohuo and info["row_count"] > 100:
-            selected_keys.append(key)
-        # 选中已发运/未发运
-        elif "发运" in sn:
-            selected_keys.append(key)
-
-    if not selected_keys:
-        # 如果没匹配到，选非结果产物的行数 > 50 的 sheet
-        for key, info in sheets_map.items():
-            if info["sheet_name"] in RESULT_SHEET_NAMES:
-                continue
-            if info["row_count"] > 50:
-                selected_keys.append(key)
-
-    if not selected_keys:
-        raise HTTPException(status_code=400, detail="未找到可合并的数据 sheet（需要总表含「明细」「已发运」「未发运」）")
+    # 自动选中数据源 sheet（排除结果产物，选中明细/已发运/未发运）
+    try:
+        selected_keys = select_source_sheets(sheets_map)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     # 交货号区间
     delivery_range = None

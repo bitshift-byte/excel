@@ -1041,6 +1041,61 @@ def read_all_sheets(filepath: str) -> Dict[str, Tuple[tuple, list]]:
     return result
 
 
+
+# 结果产物 sheet 名称集合 — 这些 sheet 是合并输出，不参与二次合并
+RESULT_SHEET_NAMES = {
+    "全量数据", "交货汇总", "交货汇总_文本日期",
+    "数据透析", "工厂交货透视", "奥妙明细", "奥妙小计",
+}
+
+
+def select_source_sheets(sheets_map: Dict[str, Dict]) -> list:
+    """从 sheets_map 中自动选择应参与合并的数据源 sheet。
+
+    选择规则：
+    1. 排除结果产物 sheet（RESULT_SHEET_NAMES）
+    2. 选中明细型 sheet（表头含"交货"列且行数 > 100）
+    3. 选中已发运/未发运 sheet（sheet名含"发运"）
+    4. 如果以上都没命中，回退选非结果产物且行数 > 50 的 sheet
+    5. 如果仍无选中，抛出 ValueError
+
+    Args:
+        sheets_map: {sheet_key: {filename, sheet_name, headers, row_count}}
+
+    Returns:
+        选中的 sheet key 列表
+    """
+    selected_keys = []
+    for key, info in sheets_map.items():
+        sn = info["sheet_name"]
+        # 排除结果产物 sheet
+        if sn in RESULT_SHEET_NAMES:
+            continue
+        # 选中明细型 sheet（含"交货"列且行数多）
+        headers_str = [str(h) if h else "" for h in info["headers"]]
+        has_jiaohuo = any("交货" in h for h in headers_str)
+        if has_jiaohuo and info["row_count"] > 100:
+            selected_keys.append(key)
+        # 选中已发运/未发运
+        elif "发运" in sn:
+            selected_keys.append(key)
+
+    if not selected_keys:
+        # 回退：选非结果产物且行数 > 50 的 sheet
+        for key, info in sheets_map.items():
+            if info["sheet_name"] in RESULT_SHEET_NAMES:
+                continue
+            if info["row_count"] > 50:
+                selected_keys.append(key)
+
+    if not selected_keys:
+        raise ValueError(
+            "未找到可合并的数据 sheet（需要总表含「明细」「已发运」「未发运」）"
+        )
+
+    return selected_keys
+
+
 def merge_files(
     file_paths: List[str],
     selected_sheets: Optional[List[str]] = None,
