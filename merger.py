@@ -525,6 +525,69 @@ def build_pivot_by_delivery(filtered_rows: list, logistics_map: Optional[Dict] =
     return pivot_headers, result, sheet3_orig
 
 
+
+def build_data_pivot(p4_headers: list, p4_data: list) -> Tuple[list, list]:
+    """构建"数据透析" sheet 数据。
+
+    数据透析是交货汇总的重排+精简版本：
+    - 12列（丢弃 B_ADDRESS1, 备注, 1, 2）
+    - 列顺序: 交货, 销售凭证, 运达方, 运达方的名字, 送达方地点, 工厂, 街道,
+              发货日期, 交货日期, 求和项:交货量, 求和项:总重量, 求和项:业务量
+    - 按交货号升序排列
+    - 数据行后追加 (空白) 行和 总计 行
+
+    Args:
+        p4_headers: 交货汇总的 16 列表头
+        p4_data: 交货汇总的数据行列表（最后一行为 总计 行）
+
+    Returns:
+        (dp_headers, dp_data): 数据透析的 12 列表头和数据行
+    """
+    # 交货汇总 16-col → 数据透析 12-col 的列映射
+    # 交货汇总 index: 交货[5], 销售凭证[4], 运达方[3], 运达方的名字[6],
+    #                 送达方地点[2], 工厂[11], 街道[7], 发货日期[0], 交货日期[1],
+    #                 求和项:交货量[8], 求和项:总重量[9], 求和项:业务量[10]
+    COL_MAP = [5, 4, 3, 6, 2, 11, 7, 0, 1, 8, 9, 10]
+
+    dp_headers = [
+        "交货", "销售凭证", "运达方", "运达方的名字", "送达方地点",
+        "工厂", "街道", "发货日期", "交货日期",
+        "求和项:交货量", "求和项:总重量", "求和项:业务量",
+    ]
+
+    # 分离数据行和总计行
+    data_rows = []
+    total_row = None
+    for row in p4_data:
+        if row and str(row[0]).strip() == "总计":
+            total_row = row
+        else:
+            # 重排列并截取 12 列
+            new_row = [row[src_idx] if src_idx < len(row) else None for src_idx in COL_MAP]
+            data_rows.append(new_row)
+
+    # 按交货号（index 0）升序排序
+    data_rows.sort(key=lambda r: str(r[0]) if r[0] is not None else "")
+
+    # 从总计行提取合计值（交货汇总 index 8/9/10）
+    if total_row:
+        total_jhl = total_row[8] if len(total_row) > 8 and total_row[8] is not None else 0
+        total_zzl = total_row[9] if len(total_row) > 9 and total_row[9] is not None else 0
+        total_ywl = total_row[10] if len(total_row) > 10 and total_row[10] is not None else 0
+    else:
+        total_jhl = 0
+        total_zzl = 0
+        total_ywl = 0
+
+    # 追加 (空白) 行
+    data_rows.append(["(空白)"] * 9 + [None, None, None])
+
+    # 追加 总计 行
+    data_rows.append(["总计", None, None, None, None, None, None, None, None,
+                      total_jhl, total_zzl, total_ywl])
+
+    return dp_headers, data_rows
+
 def read_logistics_map(files_data: Dict) -> Dict[str, Dict]:
     """从已发运/未发运 sheet 构建 销售凭证 → {B_ADDRESS1, 备注} 映射。
     
@@ -1211,6 +1274,15 @@ def merge_files(
     ws4.append(p4_headers)
     for row in p4_data:
         ws4.append(row)
+
+    # 数据透析 sheet（交货汇总的重排+精简版本，按交货号排序）
+    dp_headers, dp_data = build_data_pivot(p4_headers, p4_data)
+    ws_dp = wb.create_sheet("数据透析")
+    ws_dp.append([None] * 12)  # 空行1
+    ws_dp.append([None] * 12)  # 空行2
+    ws_dp.append(dp_headers)   # 表头
+    for row in dp_data:
+        ws_dp.append(row)
 
     p5_headers = list(p4_headers)
     ws5 = wb.create_sheet("交货汇总_文本日期")
