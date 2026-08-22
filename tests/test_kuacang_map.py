@@ -578,13 +578,12 @@ def test_build_pivot_logistics_addr_kuacang_remark_cross_fill():
     assert "KC_ADDR" not in str(row[12])
     assert "KC_REMARK" not in str(row[13])
 
-
 # =====================================================================
-# RED 17: 工单号 → B_ADDRESS1, 填写人 → 备注 (corrected mapping)
+# RED 17: 工单号 → B_ADDRESS1 (priority over 客户订单号), 填写人 → 备注 (priority over 备注/仓库备注)
 # =====================================================================
 
 def test_read_kuacang_map_gdh_to_baddress1():
-    """工单号 should go to B_ADDRESS1, not 备注."""
+    """工单号 fills B_ADDRESS1 (not concatenated with 客户订单号)."""
     files_data = {
         "跨仓订单.xlsx": {
             "跨仓结果仓库回传": (KC_HEADERS, [
@@ -594,21 +593,57 @@ def test_read_kuacang_map_gdh_to_baddress1():
     }
     result = read_kuacang_map(files_data)
     entry = result["2424827180"]
-    # 工单号 goes to B_ADDRESS1
-    assert "R_20260821_019" in entry["B_ADDRESS1"]
-    # 填写人 goes to 备注
-    assert "HFCDC.CML" in entry["备注"]
-    # Neither should be prefixed with "工单号:" or "填写人:"
-    assert "工单号:" not in entry["B_ADDRESS1"]
-    assert "填写人:" not in entry["备注"]
+    # 工单号 goes to B_ADDRESS1 (takes priority)
+    assert entry["B_ADDRESS1"] == "R_20260821_019"
+    # 填写人 goes to 备注 (takes priority)
+    assert entry["备注"] == "HFCDC.CML"
 
 
 # =====================================================================
-# RED 18: 客户订单号 + 工单号 both in B_ADDRESS1
+# RED 18: 客户订单号 used for B_ADDRESS1 when 工单号 is empty
 # =====================================================================
 
-def test_read_kuacang_map_cust_po_and_gdh_in_baddress1():
-    """When both 客户订单号 and 工单号 exist, both go to B_ADDRESS1."""
+def test_read_kuacang_map_cust_po_when_no_gdh():
+    """When 工单号 is empty, 客户订单号 fills B_ADDRESS1."""
+    files_data = {
+        "跨仓订单.xlsx": {
+            "跨仓结果仓库回传": (KC_HEADERS, [
+                _kc_row("QJDCP20260821BW跨仓03-8271", "", "2424827180", gdh="", txr=""),
+            ]),
+        }
+    }
+    result = read_kuacang_map(files_data)
+    entry = result["2424827180"]
+    assert entry["B_ADDRESS1"] == "QJDCP20260821BW跨仓03-8271"
+    assert entry["备注"] == ""
+
+
+# =====================================================================
+# RED 19: 备注/仓库备注 used for 备注 when 填写人 is empty
+# =====================================================================
+
+def test_read_kuacang_map_remark_when_no_txr():
+    """When 填写人 is empty, 备注 + 仓库备注 fill 备注."""
+    files_data = {
+        "跨仓订单.xlsx": {
+            "跨仓结果仓库回传": (KC_HEADERS, [
+                _kc_row("PO123", "配额会释放", "2424827207", "无库存", gdh="", txr=""),
+            ]),
+        }
+    }
+    result = read_kuacang_map(files_data)
+    entry = result["2424827207"]
+    assert "配额会释放" in entry["备注"]
+    assert "无库存" in entry["备注"]
+    assert entry["B_ADDRESS1"] == "PO123"
+
+
+# =====================================================================
+# RED 20: 工单号 takes priority — B_ADDRESS1 is NOT concatenated
+# =====================================================================
+
+def test_read_kuacang_map_gdh_priority_no_concat():
+    """When both 客户订单号 and 工单号 exist, B_ADDRESS1 = 工单号 only."""
     files_data = {
         "跨仓订单.xlsx": {
             "跨仓结果仓库回传": (KC_HEADERS, [
@@ -618,17 +653,17 @@ def test_read_kuacang_map_cust_po_and_gdh_in_baddress1():
     }
     result = read_kuacang_map(files_data)
     entry = result["2424827180"]
-    assert "QJDCP20260821BW跨仓03-8271" in entry["B_ADDRESS1"]
-    assert "R_20260821_019" in entry["B_ADDRESS1"]
-    assert "HFCDC.CML" in entry["备注"]
+    assert entry["B_ADDRESS1"] == "R_20260821_019"
+    assert "QJDCP" not in entry["B_ADDRESS1"]
+    assert entry["备注"] == "HFCDC.CML"
 
 
 # =====================================================================
-# RED 19: 备注 + 仓库备注 + 填写人 all in 备注
+# RED 21: 填写人 takes priority over 备注/仓库备注 — no concatenation
 # =====================================================================
 
-def test_read_kuacang_map_remark_wh_txr_concat():
-    """When 备注, 仓库备注, and 填写人 all exist, they concatenate in 备注."""
+def test_read_kuacang_map_txr_priority_no_concat():
+    """When both 备注/仓库备注 and 填写人 exist, 备注 = 填写人 only."""
     files_data = {
         "跨仓订单.xlsx": {
             "跨仓结果仓库回传": (KC_HEADERS, [
@@ -638,57 +673,18 @@ def test_read_kuacang_map_remark_wh_txr_concat():
     }
     result = read_kuacang_map(files_data)
     entry = result["2424827207"]
-    assert "配额会释放" in entry["备注"]
-    assert "无库存" in entry["备注"]
-    assert "HFCDC.CML" in entry["备注"]
-    # 工单号 goes to B_ADDRESS1, NOT 备注
-    assert "R_20260821_019" in entry["B_ADDRESS1"]
-    assert "R_20260821_019" not in entry["备注"]
-
-
-# =====================================================================
-# RED 20: Only 工单号 (no 客户订单号, no 填写人)
-# =====================================================================
-
-def test_read_kuacang_map_gdh_only_no_cust():
-    """When only 工单号 exists (no 客户订单号), 工单号 fills B_ADDRESS1."""
-    files_data = {
-        "跨仓订单.xlsx": {
-            "跨仓结果仓库回传": (KC_HEADERS, [
-                _kc_row("", "", "2424827207", gdh="R_20260821_019", txr=""),
-            ]),
-        }
-    }
-    result = read_kuacang_map(files_data)
-    entry = result["2424827207"]
-    assert entry["B_ADDRESS1"] == "R_20260821_019"
-    assert entry["备注"] == ""
-
-
-# =====================================================================
-# RED 21: Only 填写人 (no 备注, no 仓库备注, no 工单号)
-# =====================================================================
-
-def test_read_kuacang_map_txr_only_no_remark():
-    """When only 填写人 exists (no 备注/仓库备注), 填写人 fills 备注."""
-    files_data = {
-        "跨仓订单.xlsx": {
-            "跨仓结果仓库回传": (KC_HEADERS, [
-                _kc_row("PO123", "", "2424827207", gdh="", txr="HFCDC.CML"),
-            ]),
-        }
-    }
-    result = read_kuacang_map(files_data)
-    entry = result["2424827207"]
     assert entry["备注"] == "HFCDC.CML"
+    assert "配额" not in entry["备注"]
+    assert "无库存" not in entry["备注"]
+    assert entry["B_ADDRESS1"] == "R_20260821_019"
 
 
 # =====================================================================
-# RED 22: build_pivot fills B_ADDRESS1 with 工单号 from kuacang_map
+# RED 22: build_pivot fills B_ADDRESS1 with 工单号, 备注 with 填写人
 # =====================================================================
 
-def test_build_pivot_fills_baddress1_with_gdh():
-    """build_pivot_by_delivery should put 工单号 in B_ADDRESS1 from kuacang_map."""
+def test_build_pivot_fills_gdh_txr_separate():
+    """build_pivot_by_delivery puts 工单号 in B_ADDRESS1, 填写人 in 备注."""
     filtered_rows = [
         {
             "交货": "2424827180", "项目": "10", "交货量": 32,
@@ -703,7 +699,7 @@ def test_build_pivot_fills_baddress1_with_gdh():
     so_map = {}
     kuacang_map = {
         "2424827180": {
-            "B_ADDRESS1": "QJDCP20260821BW跨仓03-8271 | R_20260821_019",
+            "B_ADDRESS1": "R_20260821_019",
             "备注": "HFCDC.CML",
         }
     }
@@ -711,5 +707,5 @@ def test_build_pivot_fills_baddress1_with_gdh():
         filtered_rows, logistics_map, so_map, kuacang_map
     )
     row = [r for r in result if str(r[5]) == "2424827180"][0]
-    assert "R_20260821_019" in str(row[12])
-    assert "HFCDC.CML" in str(row[13])
+    assert row[12] == "R_20260821_019"
+    assert row[13] == "HFCDC.CML"

@@ -684,8 +684,8 @@ def read_kuacang_map(files_data: Dict) -> Dict[str, Dict]:
     - sheet 名为 "跨仓结果仓库回传"（允许前后空白）
     - 表头含 "OBD"、"客户订单号"、"备注"、"仓库备注"
     - OBD 值 == 产出物的"交货"号
-    - 客户订单号 + 工单号 → B_ADDRESS1（拼接，跳过空值）
-    - 备注 + 仓库备注 + 填写人 → 备注（拼接，跳过空值）
+    - 工单号 → B_ADDRESS1（优先于客户订单号，不拼接）
+    - 填写人 → 备注（优先于备注/仓库备注，不拼接）
 
     优先级：已存在且有 B_ADDRESS1 值的条目不被覆盖 B_ADDRESS1；
     已存在且有备注的条目不被覆盖备注；空字段可被后续行补全。
@@ -723,30 +723,32 @@ def read_kuacang_map(files_data: Dict) -> Dict[str, Dict]:
                 if not obd or obd == "0":
                     continue
                 cust_po = str(row[ci_cust]).strip() if ci_cust < len(row) and row[ci_cust] is not None else ""
-                # B_ADDRESS1 = 客户订单号 + 工单号（跳过空值）
-                addr_parts = []
-                if cust_po:
-                    addr_parts.append(cust_po)
+                # B_ADDRESS1: 工单号优先，无则用客户订单号（不拼接）
+                gdh_val = ""
                 if ci_gdh is not None and ci_gdh < len(row):
                     v = row[ci_gdh]
                     if v is not None and str(v).strip():
-                        addr_parts.append(str(v).strip())
-                addr1 = " | ".join(addr_parts) if addr_parts else ""
-                # 备注 = 备注 + 仓库备注 + 填写人（跳过空值）
-                parts = []
-                if ci_remark is not None and ci_remark < len(row):
-                    v = row[ci_remark]
-                    if v is not None and str(v).strip():
-                        parts.append(str(v).strip())
-                if ci_wh_remark is not None and ci_wh_remark < len(row):
-                    v = row[ci_wh_remark]
-                    if v is not None and str(v).strip():
-                        parts.append(str(v).strip())
+                        gdh_val = str(v).strip()
+                addr1 = gdh_val if gdh_val else cust_po
+                # 备注: 填写人优先，无则用 备注 + 仓库备注（拼接）
+                txr_val = ""
                 if ci_txr is not None and ci_txr < len(row):
                     v = row[ci_txr]
                     if v is not None and str(v).strip():
-                        parts.append(str(v).strip())
-                remark = " | ".join(parts) if parts else ""
+                        txr_val = str(v).strip()
+                if txr_val:
+                    remark = txr_val
+                else:
+                    parts = []
+                    if ci_remark is not None and ci_remark < len(row):
+                        v = row[ci_remark]
+                        if v is not None and str(v).strip():
+                            parts.append(str(v).strip())
+                    if ci_wh_remark is not None and ci_wh_remark < len(row):
+                        v = row[ci_wh_remark]
+                        if v is not None and str(v).strip():
+                            parts.append(str(v).strip())
+                    remark = " | ".join(parts) if parts else ""
                 # 客户订单号和备注都为空，跳过此行（无有用数据）
                 if not addr1 and not remark:
                     continue
