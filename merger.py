@@ -372,7 +372,7 @@ def _try_parse_date(val):
     return None
 
 
-def build_pivot_by_delivery(filtered_rows: list, logistics_map: Optional[Dict] = None, so_map: Optional[Dict] = None) -> Tuple[list, list, dict]:
+def build_pivot_by_delivery(filtered_rows: list, logistics_map: Optional[Dict] = None, so_map: Optional[Dict] = None, kuacang_map: Optional[Dict] = None) -> Tuple[list, list, dict]:
     """Sheet4/Sheet5: 按交货号汇总透视表（从 Sheet3 筛选数据构建）
     列: 交货, 销售凭证, 运达方, 运达方的名字, 送达方地点, 工厂, 街道, 发货日期, 交货日期, 求和项:交货量, 求和项:总重量, 求和项:业务量, B_ADDRESS1, 备注, 1, 2
 
@@ -380,7 +380,7 @@ def build_pivot_by_delivery(filtered_rows: list, logistics_map: Optional[Dict] =
     - 数值列：SUM 求和
     - 日期为 datetime → Sheet4 保持 datetime，街道保持原值
     - 日期为文本格式(str) → Sheet4 中日期=None，街道=None（Excel 透视表丢弃文本日期行字段）
-    - B_ADDRESS1/备注：先查 logistics_map（已发运/未发运，key=销售凭证），未命中的再查 so_map（SO文件，key=交货号）
+    - B_ADDRESS1/备注：先查 logistics_map（已发运/未发运，key=销售凭证），未命中的再查 so_map（SO文件，key=交货号），再未命中查 kuacang_map（跨仓订单，key=交货号）
     - 列1/列2（O/P 子合计）：该交货下"奥妙+洗衣粉/皂粉"类别的总重量/业务量子合计
 
     Sheet5 规则：Sheet4 的副本，但 None 的日期/街道用 Sheet3 原始文本值回填
@@ -489,6 +489,15 @@ def build_pivot_by_delivery(filtered_rows: list, logistics_map: Optional[Dict] =
                     addr1 = so_data.get("B_ADDRESS1", "") or ""
                 if not remark:
                     remark = so_data.get("备注", "") or ""
+        # 3. 如果仍未命中，用交货号查 跨仓订单 map（kuacang_map）
+        if kuacang_map:
+            delivery_no = str(entry["交货"]).strip() if entry["交货"] else ""
+            kc_data = kuacang_map.get(delivery_no)
+            if kc_data:
+                if not addr1:
+                    addr1 = kc_data.get("B_ADDRESS1", "") or ""
+                if not remark:
+                    remark = kc_data.get("备注", "") or ""
         # O/P 子合计：奥妙+洗衣粉/皂粉的总重量/业务量
         omo = omo_subtotals.get(entry["交货"])
         o_val = round(omo["zzl"], 3) if omo else None
@@ -589,6 +598,80 @@ def read_so_map(files_data: Dict) -> Dict[str, Dict]:
                     "备注": notes_val if notes_val is not None else "",
                 }
     return so_map
+
+
+def read_kuacang_map(files_data: Dict) -> Dict[str, Dict]:
+    """从跨仓订单文件构建 OBD(=交货号) → {B_ADDRESS1, 备注} 映射。
+
+    跨仓订单文件特征：
+    - sheet 名为 "跨仓结果仓库回传"（允许前后空白）
+    - 表头含 "OBD"、"客户订单号"、"备注"、"仓库备注"
+    - OBD 值 == 产出物的"交货"号
+    - 客户订单号 → B_ADDRESS1
+    - 备注 + 仓库备注 → 备注（拼接，跳过空值）
+
+    优先级：已存在且有 B_ADDRESS1 值的条目不被覆盖 B_ADDRESS1；
+    已存在且有备注的条目不被覆盖备注；空字段可被后续行补全。
+    """
+    kuacang_map: Dict[str, Dict] = {}
+    for fname, sheets in files_data.items():
+        for sname, (headers, data_rows) in sheets.items():
+            # 允许 sheet 名前后有空白
+            if sname.strip() != "跨仓结果仓库回传":
+                continue
+            h_map = {}
+            for i, h in enumerate(headers):
+                key = str(h).strip() if h else ""
+                # 保留第一次出现的列索引（"OBD" 在跨仓订单中出现两次，取第一个）
+                if key not in h_map:
+                    h_map[key] = i
+            # 需要同时有 OBD 和 客户订单号 才认定为跨仓订单 sheet
+            ci_obd = h_map.get("OBD")
+            ci_cust = h_map.get("客户订单号")
+            if ci_obd is None or ci_cust is None:
+                continue
+            ci_remark = h_map.get("备注")
+            ci_wh_remark = h_map.get("仓库备注")
+
+            for row in data_rows:
+                obd_raw = row[ci_obd] if ci_obd < len(row) and row[ci_obd] is not None else ""
+                # 规范化 OBD：float → int 字符串（xlrd 读取 .xls 时数字为 float）
+                if isinstance(obd_raw, float) and obd_raw.is_integer():
+                    obd = str(int(obd_raw))
+                else:
+                    obd = str(obd_raw).strip() if obd_raw else ""
+                # 跳过空/None/0 的 OBD
+                if not obd or obd == "0":
+                    continue
+                cust_po = str(row[ci_cust]).strip() if ci_cust < len(row) and row[ci_cust] is not None else ""
+                # 拼接 备注 + 仓库备注（跳过空值）
+                parts = []
+                if ci_remark is not None and ci_remark < len(row):
+                    v = row[ci_remark]
+                    if v is not None and str(v).strip():
+                        parts.append(str(v).strip())
+                if ci_wh_remark is not None and ci_wh_remark < len(row):
+                    v = row[ci_wh_remark]
+                    if v is not None and str(v).strip():
+                        parts.append(str(v).strip())
+                remark = " | ".join(parts) if parts else ""
+                # 客户订单号和备注都为空，跳过此行（无有用数据）
+                if not cust_po and not remark:
+                    continue
+                # 已存在的条目：补全空字段，不覆盖已有值
+                if obd in kuacang_map:
+                    existing = kuacang_map[obd]
+                    if not existing.get("B_ADDRESS1") and cust_po:
+                        existing["B_ADDRESS1"] = cust_po
+                    if not existing.get("备注") and remark:
+                        existing["备注"] = remark
+                else:
+                    kuacang_map[obd] = {
+                        "B_ADDRESS1": cust_po,
+                        "备注": remark,
+                    }
+    return kuacang_map
+
 
 
 def build_omo_detail(filtered_rows: list, std_headers: list) -> Tuple[list, list]:
@@ -1120,8 +1203,10 @@ def merge_files(
     logistics_map = read_logistics_map(files_data)
     # 读取 SO 文件的 NOTES2(→备注)/B_ADDRESS1，通过交货号(=客户订单号)关联
     so_map = read_so_map(files_data)
+    # 读取跨仓订单文件的 客户订单号(→B_ADDRESS1)/备注/仓库备注，通过交货号(=OBD)关联
+    kuacang_map = read_kuacang_map(files_data)
 
-    p4_headers, p4_data, text_dates = build_pivot_by_delivery(filtered, logistics_map, so_map)
+    p4_headers, p4_data, text_dates = build_pivot_by_delivery(filtered, logistics_map, so_map, kuacang_map)
     ws4 = wb.create_sheet("交货汇总")
     ws4.append(p4_headers)
     for row in p4_data:
