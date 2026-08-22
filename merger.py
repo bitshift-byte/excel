@@ -1466,3 +1466,97 @@ def merge_files(
     })
 
     return {"output_path": output_path, "stats": stats, "previews": previews}
+
+
+def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = None) -> dict:
+    """将邮件捞取的每日数据追加到总表（master table）格式中。
+
+    与 merge_files() 不同，此函数不生成分析 sheet（全量数据/筛选数据/交货汇总），
+    而是保留总表的原始格式（已发运/未发运/明细/客户信息/组套/Sheet5），
+    将邮件捞取产物中筛选数据的新交货号追加到「明细」sheet。
+
+    Args:
+        master_path: 总表文件路径（上传的 xlsx）
+        mail_path: 邮件捞取产物文件路径
+        output_path: 输出文件路径（可选，默认自动生成）
+
+    Returns:
+        dict: {"output_path": str, "appended_count": int, "total_in_detail": int}
+    """
+    import shutil
+
+    if output_path is None:
+        output_path = os.path.join(config.OUTPUT_DIR, f"总表合并_{fromtimestamp_cn(datetime.datetime.now().timestamp()).strftime('%Y%m%d_%H%M%S')}.xlsx")
+
+    # 复制总表作为输出基础（保留所有 sheet 和格式）
+    shutil.copy2(master_path, output_path)
+    # 确保输出文件可写（源文件可能来自微信附件，是只读的）
+    os.chmod(output_path, 0o644)
+
+    # 读取总表明细 sheet 中已有的交货号集合
+    master_wb = openpyxl.load_workbook(output_path)
+    if "明细" not in master_wb.sheetnames:
+        master_wb.close()
+        raise ValueError("总表中没有「明细」sheet")
+
+    ws_detail = master_wb["明细"]
+    existing_jiaohuo = set()
+    max_row = 1  # header row
+    for row in ws_detail.iter_rows(min_row=2, values_only=False):
+        val = row[0].value if row else None
+        if val is not None and str(val).strip():
+            existing_jiaohuo.add(str(val).strip())
+            max_row = row[0].row
+
+    # 读取邮件捞取产物的筛选数据
+    mail_wb = openpyxl.load_workbook(mail_path, read_only=True, data_only=True)
+    # 优先用「筛选数据」，没有则用「全量数据」
+    source_sheet = None
+    for sn in ("筛选数据", "全量数据"):
+        if sn in mail_wb.sheetnames:
+            source_sheet = sn
+            break
+    if source_sheet is None:
+        mail_wb.close()
+        master_wb.close()
+        raise ValueError("邮件捞取产物中没有「筛选数据」或「全量数据」sheet")
+
+    ws_mail = mail_wb[source_sheet]
+    mail_rows = list(ws_mail.iter_rows(min_row=2, values_only=True))
+    mail_wb.close()
+
+    # 总表明细有 37 列，邮件数据有 34 列
+    # 列映射：总表[0]=交货, 总表[1]=空, 总表[2..34]=邮件[1..33], 总表[35..36]=空
+    # 即：总表 col = 邮件 col + 1 (for col >= 1), 总表[0] = 邮件[0]
+    appended_count = 0
+    for mail_row in mail_rows:
+        if not mail_row or mail_row[0] is None:
+            continue
+        jiaohuo = str(mail_row[0]).strip()
+        if not jiaohuo or jiaohuo in existing_jiaohuo:
+            continue
+
+        # 新交货号，追加到明细 sheet
+        max_row += 1
+        # 总表 col 1 = 交货 (mail col 0)
+        ws_detail.cell(row=max_row, column=1, value=mail_row[0])
+        # 总表 col 2 = 空 (不做处理)
+        # 总表 col 3..35 = 邮件 col 1..33 (偏移 +2)
+        for mail_col in range(1, min(34, len(mail_row))):
+            master_col = mail_col + 2
+            val = mail_row[mail_col]
+            if val is not None:
+                ws_detail.cell(row=max_row, column=master_col, value=val)
+        # 总表 col 36..37 = 空 (不做处理)
+
+        existing_jiaohuo.add(jiaohuo)
+        appended_count += 1
+
+    master_wb.save(output_path)
+    master_wb.close()
+
+    return {
+        "output_path": output_path,
+        "appended_count": appended_count,
+        "total_in_detail": max_row - 1,  # subtract header row
+    }

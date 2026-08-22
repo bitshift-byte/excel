@@ -166,85 +166,34 @@
 
         <!-- 统计 -->
         <div class="stats-grid">
-          <div class="stat">
-            <div class="stat-label">合并行数</div>
-            <div class="stat-value">{{ stats.total_merged_rows || 0 }}</div>
-            <div class="stat-desc">行明细数据</div>
-          </div>
           <div class="stat accent">
-            <div class="stat-label">输出Sheet</div>
-            <div class="stat-value">{{ stats.sheet_count || 0 }}</div>
-            <div class="stat-desc">个工作表</div>
+            <div class="stat-label">新增交货号</div>
+            <div class="stat-value">{{ stats.appended_count || 0 }}</div>
+            <div class="stat-desc">个新交货号追加到明细</div>
           </div>
-          <div class="stat amber">
-            <div class="stat-label">交货汇总</div>
-            <div class="stat-value">{{ stats.pivot_delivery_count || 0 }}</div>
-            <div class="stat-desc">个交货号</div>
-          </div>
-          <div class="stat purple">
-            <div class="stat-label">筛选结果</div>
-            <div class="stat-value">{{ stats.filtered_rows || 0 }}</div>
-            <div class="stat-desc">行</div>
+          <div class="stat">
+            <div class="stat-label">明细总行数</div>
+            <div class="stat-value">{{ stats.total_in_detail || 0 }}</div>
+            <div class="stat-desc">行（含历史数据）</div>
           </div>
         </div>
 
-        <!-- 奥妙统计 -->
-        <div v-if="stats.omo_detail_count > 0" class="omo-stats-bar">
-          <n-icon :size="16" color="var(--secondary)"><Layers /></n-icon>
-          <span>奥妙明细 <strong>{{ stats.omo_detail_count }}</strong> 行</span>
-          <span class="omo-divider">|</span>
-          <span>奥妙小计 <strong>{{ stats.omo_subtotal_count }}</strong> 个交货号</span>
+        <!-- 输出文件信息 -->
+        <div v-if="stats.output_filename" style="margin-top: 16px; text-align: center; padding: 12px; background: var(--muted); border-radius: var(--r-sm);">
+          <n-icon :size="16" color="var(--primary)"><File /></n-icon>
+          <span style="margin-left: 8px; font-weight: 600;">{{ stats.output_filename }}</span>
         </div>
 
-        <!-- 预览 -->
-        <div v-if="previews && previews.length" class="preview-section">
-          <div v-for="(pv, pi) in previews" :key="pi" class="result-card">
-            <div class="result-head">
-              <div class="rh-title"><span class="dot"></span>{{ pv.sheet_name || '数据预览' }}</div>
-              <n-tag size="small" round type="success">{{ pv.total }} 行</n-tag>
-            </div>
-            <div class="result-body">
-              <!-- Mobile card view -->
-              <div v-if="isMobile" class="mobile-preview-cards">
-                <n-empty v-if="!previewTables[pi].data.length" description="无数据" />
-                <n-card
-                  v-for="(row, idx) in previewTables[pi].data"
-                  :key="idx"
-                  size="small"
-                  class="mobile-data-card"
-                >
-                  <div class="card-row" v-for="col in previewTables[pi].columns" :key="col.key">
-                    <span class="card-label">{{ col.title }}</span>
-                    <span class="card-value">{{ row[col.key] }}</span>
-                  </div>
-                </n-card>
-              </div>
-              <!-- Desktop table view -->
-              <n-data-table
-                v-else
-                :columns="previewTables[pi].columns"
-                :data="previewTables[pi].data"
-                :bordered="false"
-                size="small"
-                :max-height="400"
-                :scroll-x="previewTables[pi].scrollX"
-                :row-key="(row, index) => index"
-              />
-            </div>
-            <div v-if="pv.total > pv.preview_count" class="result-note">
-              显示前 {{ pv.preview_count }} 行，共 {{ pv.total }} 行，完整数据请下载 Excel
-            </div>
-          </div>
+        <div style="margin-top: 12px; text-align: center; color: var(--text-4); font-size: 13px;">
+          输出保留总表原始格式：已发运 / 未发运 / 明细 / 客户信息 / 组套 / Sheet5
         </div>
-
-        <n-empty v-else description="未筛选到匹配数据" style="padding: 40px" />
 
         <!-- 操作按钮 -->
         <div class="step-actions" style="margin-top: 24px">
           <n-button @click="goStep(1)">重新选择</n-button>
           <n-button type="primary" size="large" @click="downloadLatest">
             <template #icon><n-icon><Download /></n-icon></template>
-            下载 Excel
+            下载总表
           </n-button>
         </div>
       </n-card>
@@ -276,19 +225,6 @@ const deliveryMax = ref(null)
 
 // Step 2
 const stats = ref({})
-const previews = ref([])
-
-const previewTables = computed(() =>
-  previews.value.map(pv => {
-    const columns = pv.headers.map(h => ({ title: h, key: h, ellipsis: { tooltip: true }, width: 120 }))
-    const data = pv.rows.map(row => {
-      const obj = {}
-      pv.headers.forEach((h, i) => { obj[h] = row[i] || '' })
-      return obj
-    })
-    return { columns, data, scrollX: pv.headers.length * 120 }
-  })
-)
 
 async function loadMailResults() {
   loadingMailResults.value = true
@@ -347,9 +283,8 @@ async function runMerge() {
     const data = await mailMergeApi.run(fd)
     if (data.status === 'success') {
       stats.value = data.stats || {}
-      previews.value = data.previews || []
       currentStep.value = 2
-      message.success(`合并完成，共 ${stats.value.total_merged_rows || 0} 行`)
+      message.success(`合并完成，新增 ${stats.value.appended_count || 0} 个交货号`)
     } else {
       message.error(data.detail || '合并失败')
     }
