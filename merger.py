@@ -1471,9 +1471,10 @@ def merge_files(
 def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = None) -> dict:
     """将邮件捞取的每日数据追加到总表（master table）格式中。
 
-    与 merge_files() 不同，此函数不生成分析 sheet（全量数据/筛选数据/交货汇总），
-    而是保留总表的原始格式（已发运/未发运/明细/客户信息/组套/Sheet5），
-    将邮件捞取产物中筛选数据的新交货号追加到「明细」sheet。
+    保留总表的原始格式（已发运/未发运/明细/客户信息/组套/Sheet5）：
+    - 明细 sheet：追加筛选数据中所有新交货号的所有行（同一交货号多行全部追加）
+    - 未发运 sheet：从交货汇总中追加新订单（B_ADDRESS1/备注交换）
+    - 已发运、Sheet5、客户信息、组套：不修改
 
     Args:
         master_path: 总表文件路径（上传的 xlsx）
@@ -1481,7 +1482,8 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
         output_path: 输出文件路径（可选，默认自动生成）
 
     Returns:
-        dict: {"output_path": str, "appended_count": int, "total_in_detail": int}
+        dict: {"output_path": str, "appended_count": int, "total_in_detail": int,
+               "appended_weifayun_count": int}
     """
     import shutil
 
@@ -1493,12 +1495,36 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
     # 确保输出文件可写（源文件可能来自微信附件，是只读的）
     os.chmod(output_path, 0o644)
 
-    # 读取总表明细 sheet 中已有的交货号集合
+    # 读取邮件捞取产物（先读取，后面多处使用）
+    mail_wb = openpyxl.load_workbook(mail_path, read_only=True, data_only=True)
+
+    # ---- 1. 读取筛选数据 ----
+    source_sheet = None
+    for sn in ("筛选数据", "全量数据"):
+        if sn in mail_wb.sheetnames:
+            source_sheet = sn
+            break
+    if source_sheet is None:
+        mail_wb.close()
+        raise ValueError("邮件捞取产物中没有「筛选数据」或「全量数据」sheet")
+
+    ws_mail = mail_wb[source_sheet]
+    mail_rows = list(ws_mail.iter_rows(min_row=2, values_only=True))
+
+    # ---- 2. 读取交货汇总 ----
+    summary_rows = []
+    if "交货汇总" in mail_wb.sheetnames:
+        ws_summary = mail_wb["交货汇总"]
+        summary_rows = list(ws_summary.iter_rows(min_row=2, values_only=True))
+    mail_wb.close()
+
+    # ---- 3. 打开输出文件，准备追加 ----
     master_wb = openpyxl.load_workbook(output_path)
     if "明细" not in master_wb.sheetnames:
         master_wb.close()
         raise ValueError("总表中没有「明细」sheet")
 
+    # 读取总表明细 sheet 中已有的交货号集合
     ws_detail = master_wb["明细"]
     existing_jiaohuo = set()
     max_row = 1  # header row
@@ -1508,26 +1534,22 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
             existing_jiaohuo.add(str(val).strip())
             max_row = row[0].row
 
-    # 读取邮件捞取产物的筛选数据
-    mail_wb = openpyxl.load_workbook(mail_path, read_only=True, data_only=True)
-    # 优先用「筛选数据」，没有则用「全量数据」
-    source_sheet = None
-    for sn in ("筛选数据", "全量数据"):
-        if sn in mail_wb.sheetnames:
-            source_sheet = sn
-            break
-    if source_sheet is None:
-        mail_wb.close()
-        master_wb.close()
-        raise ValueError("邮件捞取产物中没有「筛选数据」或「全量数据」sheet")
+    # 读取总表已发运/未发运中已有的订单号集合（用于未发运去重）
+    existing_weifayun_orders = set()
+    if "未发运" in master_wb.sheetnames:
+        for row in master_wb["未发运"].iter_rows(min_row=2, values_only=True):
+            if row and len(row) > 5 and row[5] is not None:
+                existing_weifayun_orders.add(str(row[5]).strip())
 
-    ws_mail = mail_wb[source_sheet]
-    mail_rows = list(ws_mail.iter_rows(min_row=2, values_only=True))
-    mail_wb.close()
+    existing_yifayun_orders = set()
+    if "已发运" in master_wb.sheetnames:
+        for row in master_wb["已发运"].iter_rows(min_row=2, values_only=True):
+            if row and len(row) > 5 and row[5] is not None:
+                existing_yifayun_orders.add(str(row[5]).strip())
 
+    # ---- 4. 追加明细 sheet（所有新交货号的所有行）----
     # 总表明细有 37 列，邮件数据有 34 列
     # 列映射：总表[0]=交货, 总表[1]=空, 总表[2..34]=邮件[1..33], 总表[35..36]=空
-    # 即：总表 col = 邮件 col + 1 (for col >= 1), 总表[0] = 邮件[0]
     appended_count = 0
     for mail_row in mail_rows:
         if not mail_row or mail_row[0] is None:
@@ -1536,21 +1558,74 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
         if not jiaohuo or jiaohuo in existing_jiaohuo:
             continue
 
-        # 新交货号，追加到明细 sheet
+        # 新交货号，追加到明细 sheet（不加入 existing_jiaohuo，允许同交货号多行追加）
         max_row += 1
-        # 总表 col 1 = 交货 (mail col 0)
         ws_detail.cell(row=max_row, column=1, value=mail_row[0])
-        # 总表 col 2 = 空 (不做处理)
-        # 总表 col 3..35 = 邮件 col 1..33 (偏移 +2)
         for mail_col in range(1, min(34, len(mail_row))):
             master_col = mail_col + 2
             val = mail_row[mail_col]
             if val is not None:
                 ws_detail.cell(row=max_row, column=master_col, value=val)
-        # 总表 col 36..37 = 空 (不做处理)
 
-        existing_jiaohuo.add(jiaohuo)
         appended_count += 1
+
+    # ---- 5. 追加未发运 sheet（从交货汇总，B_ADDRESS1/备注交换）----
+    appended_weifayun_count = 0
+    if summary_rows and "未发运" in master_wb.sheetnames:
+        ws_weifayun = master_wb["未发运"]
+        # 找到未发运最后一行
+        wfy_max_row = 1
+        for row in ws_weifayun.iter_rows(min_row=2, values_only=False):
+            if any(c.value is not None for c in row):
+                wfy_max_row = row[0].row
+
+        for s_row in summary_rows:
+            if not s_row or len(s_row) < 6:
+                continue
+            # 跳过总计行：col0 为"总计"或 col5（交货）为空
+            if s_row[5] is None or not str(s_row[5]).strip():
+                continue
+            if s_row[0] is not None and str(s_row[0]).strip() == "总计":
+                continue
+
+            jiaohuo = str(s_row[5]).strip()
+            # 跳过已在未发运或已发运中的订单号
+            if jiaohuo in existing_weifayun_orders or jiaohuo in existing_yifayun_orders:
+                continue
+
+            wfy_max_row += 1
+            # 字段映射（交货汇总 → 未发运），B_ADDRESS1/备注交换
+            # col0 发货日期 → col0 下单日期
+            ws_weifayun.cell(row=wfy_max_row, column=1, value=s_row[0])
+            # col1 交货日期 → col1 需求日期
+            ws_weifayun.cell(row=wfy_max_row, column=2, value=s_row[1])
+            # col2 送达方地点 → col2 到货城市
+            ws_weifayun.cell(row=wfy_max_row, column=3, value=s_row[2])
+            # col3 运达方 → col3 客户代码
+            ws_weifayun.cell(row=wfy_max_row, column=4, value=s_row[3])
+            # col4 销售凭证 → col4 销售凭证
+            ws_weifayun.cell(row=wfy_max_row, column=5, value=s_row[4])
+            # col5 交货 → col5 订单号
+            ws_weifayun.cell(row=wfy_max_row, column=6, value=s_row[5])
+            # col9 客户名称 = 交货汇总 col6 运达方的名字
+            ws_weifayun.cell(row=wfy_max_row, column=10, value=s_row[6])
+            # col10 客户地址 = 交货汇总 col7 街道
+            ws_weifayun.cell(row=wfy_max_row, column=11, value=s_row[7])
+            # col11 数量 = 交货汇总 col8 求和项:交货量
+            ws_weifayun.cell(row=wfy_max_row, column=12, value=s_row[8])
+            # col12 吨位 = 交货汇总 col9 求和项:总重量
+            ws_weifayun.cell(row=wfy_max_row, column=13, value=s_row[9])
+            # col13 体积 = 交货汇总 col10 求和项:业务量
+            ws_weifayun.cell(row=wfy_max_row, column=14, value=s_row[10])
+            # col14 库区 = 交货汇总 col11 工厂
+            ws_weifayun.cell(row=wfy_max_row, column=15, value=s_row[11])
+            # col20 B_ADDRESS1 = 交货汇总 col13 备注（交换！）
+            ws_weifayun.cell(row=wfy_max_row, column=21, value=s_row[13])
+            # col21 备注 = 交货汇总 col12 B_ADDRESS1（交换！）
+            ws_weifayun.cell(row=wfy_max_row, column=22, value=s_row[12])
+
+            existing_weifayun_orders.add(jiaohuo)
+            appended_weifayun_count += 1
 
     master_wb.save(output_path)
     master_wb.close()
@@ -1558,5 +1633,6 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
     return {
         "output_path": output_path,
         "appended_count": appended_count,
-        "total_in_detail": max_row - 1,  # subtract header row
+        "total_in_detail": max_row - 1,
+        "appended_weifayun_count": appended_weifayun_count,
     }

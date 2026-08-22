@@ -138,6 +138,7 @@ async def run_merge(
     stats = {
         "appended_count": result["appended_count"],
         "total_in_detail": result["total_in_detail"],
+        "appended_weifayun_count": result.get("appended_weifayun_count", 0),
         "source_files": source_desc,
         "output_filename": output_filename,
     }
