@@ -13,7 +13,7 @@ from email.header import decode_header
 from typing import List, Set
 from collections import deque
 
-from merger import merge_files, _base_dir, now_cn, fromtimestamp_cn
+from merger import merge_files, _base_dir, now_cn, fromtimestamp_cn, normalize_date_formats
 
 try:
     import database as _db
@@ -196,6 +196,8 @@ def apply_factory_override(output_path: str, file_factory_map: dict, collected_d
                 ws.cell(row=row_idx, column=factory_col + 1).value = jh_to_factory[jh_str]
                 modified_count += 1
 
+    # 统一日期格式 + 列宽
+    normalize_date_formats(wb)
     wb.save(output_path)
     wb.close()
     return modified_count

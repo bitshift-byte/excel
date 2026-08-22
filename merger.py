@@ -330,6 +330,26 @@ def _excel_date(val):
     return val
 
 
+def normalize_date_formats(wb):
+    """统一设置 workbook 所有 sheet 中日期单元格的显示格式为斜杠 yyyy/m/d，
+    同时加宽含日期但列宽不足的列（yyyy/m/d 需要 ≥12 字符宽度）。
+    在 wb.save() 之前调用。"""
+    _DATE_FMT = "yyyy/m/d"
+    _MIN_DATE_COL_WIDTH = 12
+    for ws in wb.worksheets:
+        date_cols = set()
+        for row in ws.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, (datetime.datetime, datetime.date)):
+                    cell.number_format = _DATE_FMT
+                    date_cols.add(cell.column_letter)
+        for col_letter in date_cols:
+            dim = ws.column_dimensions.get(col_letter)
+            current_width = dim.width if dim and dim.width else 8.89
+            if current_width < _MIN_DATE_COL_WIDTH:
+                ws.column_dimensions[col_letter].width = _MIN_DATE_COL_WIDTH
+
+
 def serialize_cell(val):
     if val is None:
         return ""
@@ -1418,13 +1438,8 @@ def merge_files(
     output_filename = f"{output_prefix}_{prov_short}_{day}_{short_hash}.xlsx"
     output_path = os.path.join(output_dir, output_filename)
 
-    # 统一设置所有 sheet 中日期单元格的显示格式为斜杠 yyyy/m/d
-    _DATE_FMT = "yyyy/m/d"
-    for ws in wb.worksheets:
-        for row in ws.iter_rows():
-            for cell in row:
-                if isinstance(cell.value, (datetime.datetime, datetime.date)):
-                    cell.number_format = _DATE_FMT
+    # 统一日期格式 + 列宽
+    normalize_date_formats(wb)
     wb.save(output_path)
     wb.close()
 
@@ -1627,23 +1642,8 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
             existing_weifayun_orders.add(jiaohuo)
             appended_weifayun_count += 1
 
-    # 统一设置所有 sheet 中日期单元格的显示格式为斜杠 yyyy/m/d，
-    # 同时加宽含日期但列宽不足的列（yyyy/m/d 需要 ≥12 字符宽度）
-    _DATE_FMT = "yyyy/m/d"
-    _MIN_DATE_COL_WIDTH = 12
-    for ws in master_wb.worksheets:
-        date_cols = set()
-        for row in ws.iter_rows():
-            for cell in row:
-                if isinstance(cell.value, (datetime.datetime, datetime.date)):
-                    cell.number_format = _DATE_FMT
-                    date_cols.add(cell.column_letter)
-        for col_letter in date_cols:
-            dim = ws.column_dimensions.get(col_letter)
-            current_width = dim.width if dim and dim.width else 8.89
-            if current_width < _MIN_DATE_COL_WIDTH:
-                ws.column_dimensions[col_letter].width = _MIN_DATE_COL_WIDTH
-
+    # 统一日期格式 + 列宽
+    normalize_date_formats(master_wb)
     master_wb.save(output_path)
     master_wb.close()
 
