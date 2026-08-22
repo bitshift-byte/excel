@@ -26,13 +26,59 @@
         </div>
 
         <n-card :bordered="false" class="table-card">
+          <!-- Mobile card view -->
+          <div v-if="isMobile" class="mobile-card-list">
+            <n-empty v-if="!users.length && !loading" description="暂无用户" />
+            <n-card v-for="item in users" :key="item.username" size="small" class="mobile-data-card">
+              <div class="card-row" v-for="col in mobileUserColumns" :key="col.key">
+                <span class="card-label">{{ col.title }}</span>
+                <span class="card-value">
+                  <template v-if="col.key === 'role'">
+                    <n-tag size="small" :type="item.role === 'admin' ? 'default' : 'success'" round>{{ item.role === 'admin' ? '管理员' : '普通用户' }}</n-tag>
+                  </template>
+                  <template v-else-if="col.key === 'features'">
+                    <span class="feat-badges">
+                      <n-tag size="tiny" :type="(item.features || {}).file_merge ? 'primary' : 'default'" round :bordered="false">合并</n-tag>
+                      <n-tag size="tiny" :type="(item.features || {}).mail_reader ? 'primary' : 'default'" round :bordered="false">邮件</n-tag>
+                      <n-tag size="tiny" :type="(item.features || {}).rule_management ? 'primary' : 'default'" round :bordered="false">规则</n-tag>
+                    </span>
+                  </template>
+                  <template v-else-if="col.key === 'enabled'">
+                    <n-switch :value="item.enabled !== false" :disabled="item.username === currentUser?.username" @update:value="v => toggleEnabled(item, v)" />
+                  </template>
+                  <template v-else-if="col.key === 'device'">
+                    <DeviceStatus :username="item.username" />
+                  </template>
+                  <template v-else>{{ item[col.key] }}</template>
+                </span>
+              </div>
+              <div class="card-actions">
+                <n-button size="small" quaternary @click="openUserModal(item)">编辑</n-button>
+                <n-button size="small" quaternary @click="openPwModal(item.username)">密码</n-button>
+                <n-button size="small" quaternary type="info" @click="openRuleAssignModal(item)">规则</n-button>
+                <n-button size="small" quaternary type="success" @click="openProvinceAssignModal(item)">省份</n-button>
+                <n-button size="small" quaternary type="warning" @click="unbindDevice(item.username)">解绑</n-button>
+                <n-button
+                  size="small"
+                  quaternary
+                  type="error"
+                  :disabled="item.username === currentUser?.username || (item.role === 'admin' && adminCount <= 1)"
+                  @click="confirmDeleteUser(item)"
+                >删除</n-button>
+              </div>
+            </n-card>
+          </div>
+          <!-- Desktop table view -->
           <n-data-table
+            v-else
             :columns="userColumns"
             :data="users"
             :bordered="false"
             :loading="loading"
             :row-key="r => r.username"
             :scroll-x="900"
+            :max-height="500"
+            virtual-scroll
           />
         </n-card>
       </n-tab-pane>
@@ -89,7 +135,29 @@
         </n-card>
 
         <n-card title="用户功能权限" :bordered="false" class="config-card" style="margin-top:16px">
+          <!-- Mobile card view -->
+          <div v-if="isMobile" class="mobile-card-list">
+            <n-empty v-if="!users.length && !loading" description="暂无用户" />
+            <n-card v-for="item in users" :key="item.username" size="small" class="mobile-data-card">
+              <div class="card-row">
+                <span class="card-label">用户名</span>
+                <span class="card-value">{{ item.username }}</span>
+              </div>
+              <div class="card-row">
+                <span class="card-label">姓名</span>
+                <span class="card-value">{{ item.name }}</span>
+              </div>
+              <div class="card-row" v-for="feat in featureList" :key="feat.key">
+                <span class="card-label">{{ feat.label }}</span>
+                <span class="card-value">
+                  <n-switch :value="(item.features || {})[feat.key] !== false" @update:value="v => toggleUserFeature(item, feat.key, v)" />
+                </span>
+              </div>
+            </n-card>
+          </div>
+          <!-- Desktop table view -->
           <n-data-table
+            v-else
             :columns="featureUserColumns"
             :data="users"
             :bordered="false"
@@ -148,14 +216,14 @@
 
     <!-- ==================== 用户编辑弹窗 ==================== -->
     <n-modal v-model:show="userModal.show" preset="card" :title="userModal.isEdit ? '编辑用户' : '添加用户'" style="width:480px" :bordered="false">
-      <n-form ref="userFormRef" label-placement="top" :model="userModal.form">
-        <n-form-item label="用户名" v-if="!userModal.isEdit">
+      <n-form ref="userFormRef" label-placement="top" :model="userModal.form" :rules="userFormRules">
+        <n-form-item label="用户名" path="username" v-if="!userModal.isEdit">
           <n-input v-model:value="userModal.form.username" placeholder="登录用户名" />
         </n-form-item>
         <n-form-item label="用户名" v-else>
           <n-input :value="userModal.form.username" disabled />
         </n-form-item>
-        <n-form-item label="密码" v-if="!userModal.isEdit">
+        <n-form-item label="密码" path="password" v-if="!userModal.isEdit">
           <n-input v-model:value="userModal.form.password" type="password" show-password-on="click" placeholder="初始密码" />
         </n-form-item>
         <n-form-item label="姓名">
@@ -316,15 +384,17 @@
 
 <script setup>
 import { ref, reactive, computed, h, onMounted } from 'vue'
-import { useMessage, useDialog, NTag, NButton, NSwitch, NSpace, NIcon } from 'naive-ui'
+import { NButton, NCard, NDataTable, NDivider, NDynamicTags, NEmpty, NForm, NFormItem, NIcon, NInput, NModal, NSelect, NSpace, NSpin, NSwitch, NTabPane, NTabs, NTag, useDialog, useMessage } from 'naive-ui'
 import { adminApi } from '@/api'
 import {
   Plus, Close, Refresh, Layers, ChevronForward, User, Lock, MapPin,
 } from '@/utils/icons'
 import { CheckmarkCircle } from '@vicons/ionicons5'
+import { useResponsive } from '@/composables/useResponsive'
 
 const message = useMessage()
 const dialog = useDialog()
+const { isMobile } = useResponsive()
 
 // ============== 工具函数 ==============
 function formatDate(ts) {
@@ -458,6 +528,11 @@ const userColumns = computed(() => [
   },
 ])
 
+// 移动端卡片视图使用的列（过滤掉操作列，操作在卡片底部单独渲染）
+const mobileUserColumns = computed(() =>
+  userColumns.value.filter(c => c.key !== 'actions')
+)
+
 const featureUserColumns = computed(() => [
   { title: '用户名', key: 'username' },
   { title: '姓名', key: 'name' },
@@ -541,15 +616,29 @@ async function loadMailConfig() {
 
 async function loadRules() {
   loading.value = true
-  const data = await adminApi.rules()
-  loading.value = false
-  if (data.status === 'success') {
-    rules.value = data.rules || []
+  try {
+    const data = await adminApi.rules()
+    if (data.status === 'success') {
+      rules.value = data.rules || []
+    } else {
+      message.error(data.detail || '加载规则失败')
+    }
+  } catch (err) {
+    message.error('加载规则失败')
+  } finally {
+    loading.value = false
   }
 }
 
 async function loadCurrentUser() {
-  const data = await adminApi.appConfig()
+  try {
+    const data = await adminApi.appConfig()
+    if (data.status !== 'success') {
+      message.error('加载用户配置失败：' + (data.detail || ''))
+    }
+  } catch (err) {
+    message.error('加载用户配置失败：' + err.message)
+  }
   // Also use the session user from store if available
   try {
     const me = await import('@/stores/user').then(m => m.useUserStore())
@@ -570,6 +659,21 @@ function refreshCurrentTab() {
 }
 
 // ============== 用户操作 ==============
+const userFormRef = ref(null)
+
+const userFormRules = {
+  username: {
+    required: true,
+    message: '请输入用户名',
+    trigger: ['input', 'blur'],
+  },
+  password: {
+    required: true,
+    message: '请输入密码',
+    trigger: ['input', 'blur'],
+  },
+}
+
 const userModal = reactive({
   show: false,
   isEdit: false,
@@ -610,6 +714,11 @@ function openUserModal(user) {
 }
 
 async function saveUser() {
+  try {
+    await userFormRef.value?.validate()
+  } catch (_) {
+    return
+  }
   if (!userModal.form.username.trim()) {
     message.warning('用户名不能为空')
     return
@@ -1156,6 +1265,52 @@ onMounted(async () => {
   color: var(--text-4);
 }
 
+/* ============ Mobile Card Layout (tables -> cards) ============ */
+.mobile-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mobile-data-card {
+  border-radius: 12px;
+}
+.mobile-data-card .feat-badges {
+  justify-content: flex-end;
+}
+.card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-light, #F0DEE7);
+}
+.card-row:last-of-type {
+  border-bottom: none;
+}
+.card-label {
+  color: var(--text-3, #8B7588);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.card-value {
+  color: var(--text, #3D2B3C);
+  font-size: 14px;
+  text-align: right;
+  word-break: break-all;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-light, #F0DEE7);
+}
+
 /* ============ Config Cards ============ */
 .config-card {
   background: var(--surface);
@@ -1415,8 +1570,17 @@ onMounted(async () => {
     gap: 8px;
   }
   :deep(.n-tabs-tab) {
-    padding: 6px 10px;
+    padding: 6px 8px;
     font-size: 13px;
+  }
+  :deep(.n-tabs .n-tabs-nav--bar-type .n-tabs-nav-scroll-wrapper) {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+  :deep(.n-tabs .n-tabs-nav--bar-type .n-tabs-nav-scroll-content) {
+    flex-wrap: nowrap !important;
   }
   :deep(.n-data-table) {
     font-size: 12px;

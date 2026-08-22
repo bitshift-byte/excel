@@ -5,90 +5,19 @@ import App from './App.vue'
 import { setUnauthorizedHandler } from './api'
 import './styles/global.css'
 
-// 全局注册 Naive UI 组件
-import {
-  create,
-  NConfigProvider,
-  NLoadingBarProvider,
-  NMessageProvider,
-  NNotificationProvider,
-  NDialogProvider,
-  NDialog,
-  NInput,
-  NInputGroup,
-  NInputNumber,
-  NButton,
-  NButtonGroup,
-  NForm,
-  NFormItem,
-  NSwitch,
-  NSelect,
-  NTag,
-  NCard,
-  NTabs,
-  NTabPane,
-  NDataTable,
-  NIcon,
-  NEmpty,
-  NModal,
-  NDivider,
-  NRadio,
-  NRadioGroup,
-  NUpload,
-  NDescriptions,
-  NDescriptionsItem,
-  NSpace,
-  NDynamicTags,
-  NLayout,
-  NLayoutSider,
-  NLayoutContent,
-  NMenu,
-  NBadge,
-  NTooltip,
-  NAlert,
-  NProgress,
-  NSpin,
-  NCheckbox,
-  NCheckboxGroup,
-  NCollapse,
-  NCollapseItem,
-  NPopover,
-  NDropdown,
-  NStatistic,
-  NGrid,
-  NGridItem,
-  NResult,
-  NStep,
-  NSteps,
-  NUploadDragger,
-  NDatePicker,
-} from 'naive-ui'
-
 const app = createApp(App)
 const pinia = createPinia()
 
 app.use(pinia)
 
-// 注册所有 Naive UI 组件（kebab-case 命名匹配模板中的 <n-xxx> 标签）
-const naiveComponents = [
-  NConfigProvider, NLoadingBarProvider, NMessageProvider, NNotificationProvider,
-  NDialogProvider, NDialog, NInput, NInputGroup, NInputNumber, NButton, NButtonGroup,
-  NForm, NFormItem, NSwitch, NSelect, NTag, NCard, NTabs, NTabPane, NDataTable,
-  NIcon, NEmpty, NModal, NDivider, NRadio, NRadioGroup, NUpload, NDescriptions,
-  NDescriptionsItem, NSpace, NDynamicTags, NLayout, NLayoutSider, NLayoutContent,
-  NMenu, NBadge, NTooltip, NAlert, NProgress, NSpin, NCheckbox, NCheckboxGroup,
-  NCollapse, NCollapseItem, NPopover, NDropdown, NStatistic, NGrid, NGridItem,
-  NResult,
-  NStep, NSteps, NUploadDragger, NDatePicker,
-]
-naiveComponents.forEach(comp => {
-  // Naive UI 组件名如 "Input", "ConfigProvider" 等，需转为 "n-input", "n-config-provider"
-  const kebab = 'n-' + comp.name.replace(/([A-Z])/g, (m, p, i) => (i ? '-' : '') + m.toLowerCase())
-  app.component(kebab, comp)
-})
+// 不再全局注册 Naive UI 组件
+// 各 .vue 文件通过 import { NXxx } from 'naive-ui' 按需引入
+// Vite 会自动按路由拆分,登录页只加载它用到的组件
 
-// 设置未认证处理
+// 设置未认证处理：401 时跳转登录页（去重，避免重复跳转）并清理本地用户状态
 setUnauthorizedHandler(() => {
+  if (router.currentRoute.value.name === 'login') return
+  localStorage.removeItem('user')
   router.push({ name: 'login' })
 })
 

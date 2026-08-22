@@ -8,11 +8,12 @@ import os
 import json
 import uuid
 from typing import List
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Request
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Request, Query
 from fastapi.responses import JSONResponse, FileResponse
 
 import config
 import auth
+import state
 from merger import (
     get_province_list,
     serialize_cell,
@@ -176,26 +177,43 @@ async def process_files(
     # 有奥妙数据时 +2：奥妙明细、奥妙小计
     stats["sheet_count"] = 7 if stats.get("omo_detail_count", 0) > 0 else 5
 
+    # 记录 session_id → 输出文件名映射，供下载接口按会话隔离
+    output_filename = os.path.basename(result["output_path"])
+    state.SESSION_OUTPUTS[session_id] = output_filename
+
     return JSONResponse(
         content={
             "status": "success",
             "stats": stats,
             "previews": result["previews"],
-            "download_url": "/api/download",
+            "download_url": f"/api/download?session_id={session_id}",
+            "output_filename": output_filename,
         }
     )
 
 
 @router.get("/api/download")
-async def download():
-    files = [f for f in os.listdir(config.OUTPUT_DIR) if f.endswith(".xlsx")]
-    if not files:
-        raise HTTPException(status_code=404, detail="没有可下载的文件，请先处理")
-    files.sort(
-        key=lambda f: os.path.getmtime(os.path.join(config.OUTPUT_DIR, f)),
-        reverse=True,
-    )
-    latest = files[0]
+async def download(session_id: str = Query(default="")):
+    """下载合并结果文件。
+    优先按 session_id 查找该会话对应的输出文件（会话隔离）；
+    若未提供 session_id 或会话已过期，回退到最新的 .xlsx 文件。"""
+    latest = None
+    if session_id and session_id in state.SESSION_OUTPUTS:
+        candidate = state.SESSION_OUTPUTS[session_id]
+        candidate_path = os.path.join(config.OUTPUT_DIR, candidate)
+        if os.path.isfile(candidate_path):
+            latest = candidate
+
+    if not latest:
+        files = [f for f in os.listdir(config.OUTPUT_DIR) if f.endswith(".xlsx")]
+        if not files:
+            raise HTTPException(status_code=404, detail="没有可下载的文件，请先处理")
+        files.sort(
+            key=lambda f: os.path.getmtime(os.path.join(config.OUTPUT_DIR, f)),
+            reverse=True,
+        )
+        latest = files[0]
+
     output_path = os.path.join(config.OUTPUT_DIR, latest)
     return FileResponse(
         output_path,

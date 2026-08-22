@@ -19,7 +19,7 @@
 
 <script setup>
 import { ref, watchEffect, provide } from 'vue'
-import { zhCN, dateZhCN, darkTheme } from 'naive-ui'
+import { NConfigProvider, NDialogProvider, NLoadingBarProvider, NMessageProvider, NNotificationProvider } from 'naive-ui'
 import { sakuraThemeOverrides, sakuraDarkThemeOverrides } from '@/theme/sakura'
 
 const STORAGE_KEY = 'sakura-theme'

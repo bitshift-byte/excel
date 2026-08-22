@@ -20,3 +20,6 @@ USERS: dict = {}
 # 应用配置缓存
 APP_CONFIG_CACHE: dict = {}
 APP_CONFIG_CACHE_TIME: float = 0.0
+
+# session_id → output_filename 映射（用于下载时按会话隔离）
+SESSION_OUTPUTS: Dict[str, str] = {}

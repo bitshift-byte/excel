@@ -71,7 +71,7 @@
               v-model:value="selectedRuleId"
               :options="ruleOptions"
               placeholder="-- 选择规则 --"
-              style="width: 280px"
+              class="rule-select"
               size="small"
             />
           </div>
@@ -168,7 +168,7 @@
         <template #header>
           <div class="card-header-row">
             <span>筛选省份</span>
-            <n-tag size="small" round type="success">已选 {{ selectedProvinces.size }} 个</n-tag>
+            <n-tag size="small" round type="success">已选 {{ selectedProvinces.length }} 个</n-tag>
           </div>
         </template>
 
@@ -191,7 +191,7 @@
           placeholder="搜索省份..."
           clearable
           size="small"
-          style="max-width: 300px; margin: 12px 0"
+          class="prov-search"
         >
           <template #prefix><n-icon><Search /></n-icon></template>
         </n-input>
@@ -201,15 +201,15 @@
             v-for="r in filteredRegions"
             :key="r.name"
             class="prov-tag"
-            :class="{ on: selectedProvinces.has(r.name) }"
+            :class="{ on: selectedProvinces.includes(r.name) }"
             @click="toggleProv(r.name)"
           >
             {{ r.name }}
           </div>
         </div>
 
-        <div v-if="selectedProvinces.size > 0" class="prov-bar">
-          已选择 {{ selectedProvinces.size }} 个省份：{{ [...selectedProvinces].join('、') }}
+        <div v-if="selectedProvinces.length > 0" class="prov-bar">
+          已选择 {{ selectedProvinces.length }} 个省份：{{ selectedProvinces.join('、') }}
         </div>
       </n-card>
 
@@ -230,7 +230,7 @@
             placeholder="最小交货号"
             :show-button="false"
             size="small"
-            style="width: 200px"
+            class="delivery-input"
             clearable
           />
           <span class="range-sep">—</span>
@@ -239,7 +239,7 @@
             placeholder="最大交货号"
             :show-button="false"
             size="small"
-            style="width: 200px"
+            class="delivery-input"
             clearable
           />
           <n-button size="small" quaternary @click="deliveryMin = null; deliveryMax = null">清除</n-button>
@@ -293,7 +293,7 @@
 
         <!-- 预览 -->
         <div v-if="previews && previews.length" class="preview-section">
-          <div v-for="(pv, pi) in previews" :key="pi" class="result-card">
+          <div v-for="(pv, pi) in previewTables" :key="pi" class="result-card">
             <div class="result-head">
               <div class="rh-title">
                 <span class="dot"></span>
@@ -302,9 +302,21 @@
               <n-tag size="small" round type="success">{{ pv.total }} 行</n-tag>
             </div>
             <div class="result-body">
+              <!-- 移动端：卡片式展示 -->
+              <div v-if="isMobile" class="preview-cards">
+                <div v-for="(row, ri) in pv.data" :key="ri" class="preview-card">
+                  <div v-for="(h, hi) in pv.headers" :key="hi" class="preview-card-row">
+                    <span class="preview-card-label">{{ h }}</span>
+                    <span class="preview-card-value">{{ row[h] || '' }}</span>
+                  </div>
+                </div>
+              </div>
+              <!-- 桌面端：数据表格 -->
               <n-data-table
-                :columns="pv.headers.map(h => ({ title: h, key: h, ellipsis: { tooltip: true }, width: 120 }))"
-                :data="pv.rows.map(row => { const obj = {}; pv.headers.forEach((h, i) => obj[h] = row[i] || ''); return obj; })"
+                v-else
+                :columns="pv.columns"
+                :data="pv.data"
+                :row-key="(row, index) => index"
                 :bordered="false"
                 size="small"
                 :max-height="400"
@@ -333,33 +345,40 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useMessage } from 'naive-ui'
+import { NButton, NCard, NCheckbox, NDataTable, NEmpty, NIcon, NInput, NInputNumber, NSelect, NSpace, NStep, NSteps, NTabPane, NTabs, NTag, NUpload, NUploadDragger, useDialog, useMessage } from 'naive-ui'
+import { storeToRefs } from 'pinia'
 import { fileApi, regionApi } from '@/api'
+import { useMergeStore } from '@/stores/merge'
+import { useResponsive } from '@/composables/useResponsive'
 import {
   Upload, File, Close, Search, Target, Zap, Download, Layers,
 } from '@/utils/icons'
 
 const message = useMessage()
+const dialog = useDialog()
 
-const currentStep = ref(1)
+// Pinia store：合并流程状态持久化，页面切换不丢失进度
+const mergeStore = useMergeStore()
+const { currentStep, analyzeData, selectedProvinces, selectedRuleId } = storeToRefs(mergeStore)
+
+// 响应式断点：移动端预览表格 → 卡片切换
+const { isMobile } = useResponsive()
+
 const fileList = ref([])
 const selectedFiles = ref([])
 const analyzing = ref(false)
 const merging = ref(false)
 
-// 分析结果
-const analyzeData = ref(null)
+// 分析结果（本地，随组件重建）
 const sheetStates = reactive({})
 const allColumns = ref([])
 const rulesData = ref([])
-const selectedRuleId = ref('')
 
-// 省份
+// 省份（搜索框为本地，选中项存于 store）
 const regions = ref([])
 const provSearch = ref('')
-const selectedProvinces = ref(new Set())
 
-// 交货号区间
+// 交货号区间（本地）
 const deliveryMin = ref(null)
 const deliveryMax = ref(null)
 
@@ -418,24 +437,51 @@ const filteredRegions = computed(() => {
 const stats = ref({})
 const previews = ref([])
 
+// 预览表格的 columns/data 预计算，避免模板内联 .map() 每次渲染重建
+const previewTables = computed(() => {
+  if (!previews.value || !previews.value.length) return []
+  return previews.value.map(pv => ({
+    ...pv,
+    columns: pv.headers.map(h => ({ title: h, key: h, ellipsis: { tooltip: true }, width: 120 })),
+    data: pv.rows.map(row => {
+      const obj = {}
+      pv.headers.forEach((h, i) => { obj[h] = row[i] || '' })
+      return obj
+    }),
+  }))
+})
+
 // 方法
+const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
+
 function handleFileChange({ fileList: newList }) {
-  fileList.value = newList
-  selectedFiles.value = newList
-    .filter(f => f.file && /\.(xlsx|xls)$/i.test(f.name))
+  // 文件大小校验：过滤掉超过 50MB 的文件
+  const oversized = newList.filter(f => f.file && f.file.size > MAX_FILE_SIZE)
+  if (oversized.length > 0) {
+    const names = oversized.map(f => f.name).join('、')
+    message.warning(`以下文件超过 50MB 限制，已被过滤：${names}`)
+  }
+
+  const validFiles = newList
+    .filter(f => f.file && /\.(xlsx|xls)$/i.test(f.name) && f.file.size <= MAX_FILE_SIZE)
+
+  fileList.value = validFiles
+  selectedFiles.value = validFiles
     .map(f => f.file)
     .filter((f, i, arr) => arr.findIndex(x => x.name === f.name) === i)
 }
 
 function removeFile(idx) {
+  const target = selectedFiles.value[idx]
+  if (!target) return
   selectedFiles.value.splice(idx, 1)
-  fileList.value.splice(idx, 1)
+  fileList.value = fileList.value.filter(f => f.name !== target.name)
 }
 
 async function analyzeFiles() {
   if (!selectedFiles.value.length) return
   analyzing.value = true
-  message.loading('正在分析表头...', { duration: 2000 })
+  const loadingMsg = message.loading('正在分析表头...', { duration: 0 })
   try {
     const fd = new FormData()
     for (const f of selectedFiles.value) {
@@ -443,7 +489,7 @@ async function analyzeFiles() {
     }
     const data = await fileApi.analyze(fd)
     if (data.status === 'success') {
-      analyzeData.value = data
+      mergeStore.setAnalyzeData(data)
       allColumns.value = data.all_columns || []
       rulesData.value = data.rules || []
       initSheetStates(data)
@@ -464,6 +510,7 @@ async function analyzeFiles() {
   } catch (e) {
     message.error('请求出错: ' + e.message)
   } finally {
+    loadingMsg.destroy()
     analyzing.value = false
   }
 }
@@ -504,56 +551,41 @@ function toggleSheetSel(key) {
   }
 }
 
+function resetAll() {
+  // 重置 store 持久化状态（currentStep / analyzeData / selectedProvinces / selectedRuleId）
+  mergeStore.reset()
+  // 清空本地状态
+  fileList.value = []
+  selectedFiles.value = []
+  Object.keys(sheetStates).forEach(k => delete sheetStates[k])
+  allColumns.value = []
+  rulesData.value = []
+  stats.value = {}
+  previews.value = []
+  provSearch.value = ''
+  deliveryMin.value = null
+  deliveryMax.value = null
+}
+
 function goStep(n) {
+  if (n === 1 && currentStep.value > 1) {
+    dialog.warning({
+      title: '确认重新上传',
+      content: '当前进度将丢失，确认要重新上传吗？',
+      positiveText: '确认',
+      negativeText: '取消',
+      onPositiveClick: () => {
+        resetAll()
+      },
+    })
+    return
+  }
   currentStep.value = n
 }
 
 function normalizeStr(s) {
   if (!s) return ''
   return s.trim().toLowerCase().replace(/\s/g, '').replace(/_/g, '')
-}
-
-function matchHeadersToRule(headers, rule) {
-  const stdHeaders = rule.standard_headers || []
-  const result = []
-  const usedTargets = new Set()
-  for (let header of headers) {
-    const hs = header ? String(header) : ''
-    if (!hs) { result.push({ header: hs, stdName: null }); continue }
-    const hsNorm = normalizeStr(hs)
-    let matched = null
-    for (let sh of stdHeaders) {
-      const target = sh.name
-      if (!target || usedTargets.has(target)) continue
-      for (let sc of (sh.source_columns || [])) {
-        if (normalizeStr(sc) === hsNorm) { matched = target; break }
-      }
-      if (matched) break
-    }
-    if (!matched) {
-      for (let sh of stdHeaders) {
-        const target = sh.name
-        if (!target || usedTargets.has(target)) continue
-        for (let sc of (sh.source_columns || [])) {
-          const scNorm = normalizeStr(sc)
-          if (!scNorm) continue
-          if (scNorm.includes(hsNorm) || hsNorm.includes(scNorm)) {
-            const maxLen = Math.max(scNorm.length, hsNorm.length)
-            const minLen = Math.min(scNorm.length, hsNorm.length)
-            if (minLen >= maxLen * 0.5) { matched = target; break }
-          }
-        }
-        if (matched) break
-      }
-    }
-    if (matched) {
-      usedTargets.add(matched)
-      result.push({ header: hs, stdName: matched })
-    } else {
-      result.push({ header: hs, stdName: null })
-    }
-  }
-  return result
 }
 
 function applyRuleToSheets() {
@@ -566,13 +598,31 @@ function applyRuleToSheets() {
     message.error('规则未找到')
     return
   }
+  // 前端仅做预览用简单匹配：normalizeStr 归一化后精确匹配 source_columns。
+  // 真正的列匹配在 /api/process 时由后端完成，此处不影响最终合并结果。
+  const stdHeaders = rule.standard_headers || []
   let totalMatched = 0
   for (const key of Object.keys(sheetStates)) {
     const st = sheetStates[key]
-    const autoMap = matchHeadersToRule(st.originalHeaders, rule)
-    autoMap.forEach((item, idx) => {
-      if (item.stdName) {
-        st.headers[idx] = item.stdName
+    const usedTargets = new Set()
+    st.originalHeaders.forEach((header, idx) => {
+      const hs = header ? String(header) : ''
+      if (!hs) return
+      const hsNorm = normalizeStr(hs)
+      if (!hsNorm) return
+      let matched = null
+      for (const sh of stdHeaders) {
+        const target = sh.name
+        if (!target || usedTargets.has(target)) continue
+        const cols = (sh.source_columns || []).map(normalizeStr).filter(Boolean)
+        if (cols.includes(hsNorm)) {
+          matched = target
+          break
+        }
+      }
+      if (matched) {
+        usedTargets.add(matched)
+        st.headers[idx] = matched
         totalMatched++
       }
     })
@@ -585,7 +635,7 @@ function clearRuleMapping() {
     const st = sheetStates[key]
     st.headers = [...st.originalHeaders]
   }
-  selectedRuleId.value = ''
+  selectedRuleId.value = null
   message.success('已清除所有映射')
 }
 
@@ -611,13 +661,13 @@ async function processMerge() {
   }
 
   merging.value = true
-  message.loading('正在合并数据...', { duration: 3000 })
+  const loadingMsg = message.loading('正在合并数据...', { duration: 0 })
   try {
     const fd = new FormData()
     fd.append('session_id', analyzeData.value.session_id)
     fd.append('mappings', JSON.stringify(mappings))
     fd.append('selected_sheets', JSON.stringify(selected))
-    fd.append('provinces', JSON.stringify([...selectedProvinces.value]))
+    fd.append('provinces', JSON.stringify(selectedProvinces.value))
     if (selectedRuleId.value) fd.append('rule_id', selectedRuleId.value)
     if (deliveryMin.value) fd.append('delivery_min', String(deliveryMin.value))
     if (deliveryMax.value) fd.append('delivery_max', String(deliveryMax.value))
@@ -635,45 +685,79 @@ async function processMerge() {
   } catch (e) {
     message.error('请求出错: ' + e.message)
   } finally {
+    loadingMsg.destroy()
     merging.value = false
   }
 }
 
-function downloadLatest() {
-  const a = document.createElement('a')
-  a.href = fileApi.download()
-  a.download = ''
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
+async function downloadLatest() {
+  const loadingMsg = message.loading('正在准备下载...', { duration: 0 })
+  try {
+    const sessionId = analyzeData.value?.session_id
+    const resp = await fetch(fileApi.download(sessionId), { credentials: 'same-origin' })
+    if (!resp.ok) {
+      let detail = `下载失败 (HTTP ${resp.status})`
+      try {
+        const err = await resp.json()
+        detail = err.detail || detail
+      } catch (_) {}
+      message.error(detail)
+      return
+    }
+    // 解析文件名
+    const disposition = resp.headers.get('content-disposition')
+    let filename = '合并结果.xlsx'
+    if (disposition) {
+      const match = disposition.match(/filename\*?=(?:UTF-8'')?(["']?)([^;"']+)\1/i)
+      if (match) filename = decodeURIComponent(match[2])
+    }
+    // Blob 下载
+    const blob = await resp.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    message.success('文件已下载')
+  } catch (e) {
+    message.error('下载失败：' + e.message)
+  } finally {
+    loadingMsg.destroy()
+  }
 }
 
 function toggleProv(name) {
-  const newSet = new Set(selectedProvinces.value)
-  if (newSet.has(name)) newSet.delete(name)
-  else newSet.add(name)
-  selectedProvinces.value = newSet
+  const arr = selectedProvinces.value
+  if (arr.includes(name)) {
+    selectedProvinces.value = arr.filter(p => p !== name)
+  } else {
+    selectedProvinces.value = [...arr, name]
+  }
 }
 
 function selectProvGroup(group) {
   const provs = PROV_GROUPS[group]
   if (!provs) return
-  const newSet = new Set(selectedProvinces.value)
-  const allSelected = provs.every(p => newSet.has(p))
+  const arr = selectedProvinces.value
+  const allSelected = provs.every(p => arr.includes(p))
   if (allSelected) {
-    provs.forEach(p => newSet.delete(p))
+    selectedProvinces.value = arr.filter(p => !provs.includes(p))
   } else {
-    provs.forEach(p => newSet.add(p))
+    const merged = new Set(arr)
+    provs.forEach(p => merged.add(p))
+    selectedProvinces.value = [...merged]
   }
-  selectedProvinces.value = newSet
 }
 
 function selectAllProv() {
-  selectedProvinces.value = new Set(regions.value.map(r => r.name))
+  selectedProvinces.value = regions.value.map(r => r.name)
 }
 
 function clearProv() {
-  selectedProvinces.value = new Set()
+  selectedProvinces.value = []
 }
 
 async function loadRegions() {
@@ -685,6 +769,20 @@ async function loadRegions() {
 
 onMounted(() => {
   loadRegions()
+  // 页面重新挂载时，若 store 中仍保留分析结果但本地 sheetStates 已丢失，则重建之
+  if (analyzeData.value && Object.keys(sheetStates).length === 0) {
+    allColumns.value = analyzeData.value.all_columns || []
+    rulesData.value = analyzeData.value.rules || []
+    initSheetStates(analyzeData.value)
+    if (analyzeData.value.regions) {
+      regions.value = analyzeData.value.regions
+    }
+  }
+  // 合并结果（stats/previews）为本地状态，重新挂载后会丢失；
+  // 若仍停留在结果步骤但没有预览数据，回退到配置步骤避免空页面
+  if (currentStep.value === 3 && (!previews.value || previews.value.length === 0)) {
+    currentStep.value = analyzeData.value ? 2 : 1
+  }
 })
 </script>
 
@@ -923,10 +1021,17 @@ onMounted(() => {
   padding: 5px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 16px;
   font-family: inherit;
   background: var(--surface);
   color: var(--text);
+}
+
+/* 桌面端缩小字体（移动端保持 16px 防止 iOS 自动缩放） */
+@media (min-width: 768px) {
+  .col-input {
+    font-size: 13px;
+  }
 }
 
 .col-input:focus {
@@ -1117,6 +1222,19 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
+.rule-select {
+  width: 280px;
+}
+
+.delivery-input {
+  width: 200px;
+}
+
+.prov-search {
+  max-width: 300px;
+  margin: 12px 0;
+}
+
 .range-sep {
   font-size: 14px;
   color: var(--text-4);
@@ -1175,6 +1293,47 @@ onMounted(() => {
   padding: 0;
 }
 
+/* 移动端预览卡片 */
+.preview-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.preview-card {
+  border: 1px solid var(--border-l);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  background: var(--surface);
+}
+
+.preview-card-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-l);
+  font-size: 12px;
+}
+
+.preview-card-row:last-child {
+  border-bottom: none;
+}
+
+.preview-card-label {
+  flex: 0 0 38%;
+  font-weight: 600;
+  color: var(--text-3);
+  word-break: break-all;
+}
+
+.preview-card-value {
+  flex: 1;
+  color: var(--text-2);
+  word-break: break-all;
+}
+
 .result-note {
   padding: 8px 14px;
   font-size: 12px;
@@ -1217,11 +1376,32 @@ onMounted(() => {
 /* ---- Mobile responsive ---- */
 @media (max-width: 768px) {
   .page-view {
-    padding: 20px 14px;
+    padding: 16px 12px;
   }
   .page-header {
     flex-direction: column;
     gap: 8px;
+  }
+  .rule-selector-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .rule-selector-left {
+    flex-wrap: wrap;
+  }
+  .rule-select {
+    width: 100%;
+    flex: 1;
+    min-width: 120px;
+  }
+  .delivery-input {
+    width: 100%;
+    flex: 1;
+    min-width: 100px;
+  }
+  .prov-search {
+    max-width: 100%;
   }
   .page-title {
     font-size: 20px;
@@ -1264,7 +1444,6 @@ onMounted(() => {
     padding: 4px;
   }
   .col-input {
-    font-size: 12px;
     padding: 4px 6px;
   }
   .stat {

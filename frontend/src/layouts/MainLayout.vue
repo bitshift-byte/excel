@@ -1,8 +1,10 @@
 <template>
   <n-layout has-sider class="main-layout">
-    <!-- 真实樱花氛围背景（侧栏玻璃透出） -->
-    <div class="bg-sakura">
-      <img class="bg-photo" :src="sakuraBg" alt="sakura background" />
+    <!-- 极光柔彩背景 -->
+    <div class="bg-aurora">
+      <div class="aurora-glow"></div>
+      <div class="aurora-grain"></div>
+      <div class="aurora-vignette"></div>
     </div>
 
     <!-- 持续写实花瓣飘落 -->
@@ -162,7 +164,7 @@
             <div class="user-name">{{ userStore.user.name || userStore.user.username }}</div>
             <div class="user-role">{{ userStore.isAdmin ? '管理员' : '普通用户' }}</div>
           </div>
-          <n-button quaternary circle size="small" @click="handleLogout" title="退出登录">
+          <n-button quaternary circle size="small" @click="handleLogout" title="退出登录" aria-label="退出登录">
             <template #icon>
               <n-icon><LogOut /></n-icon>
             </template>
@@ -187,10 +189,17 @@
 
     <!-- 主内容区 -->
     <n-layout class="main-content">
-      <n-layout-content content-style="height: 100vh; overflow-y: auto;">
-        <button class="mobile-toggle" @click="sidebarCollapsed = !sidebarCollapsed" title="菜单">
-          <n-icon :size="22"><Menu /></n-icon>
-        </button>
+      <n-layout-content content-style="height: 100dvh; overflow-y: auto;">
+        <!-- 移动端顶栏 -->
+        <div class="mobile-topbar">
+          <button class="mobile-topbar-btn" @click="sidebarCollapsed = !sidebarCollapsed" title="菜单" aria-label="打开菜单">
+            <n-icon :size="22"><Menu /></n-icon>
+          </button>
+          <span class="mobile-topbar-title">LX捞数据</span>
+          <button class="mobile-topbar-btn mobile-topbar-theme" @click="theme.toggle" title="切换主题" aria-label="切换主题">
+            <n-icon :size="20"><component :is="theme.isDark.value ? Sunny : Moon" /></n-icon>
+          </button>
+        </div>
         <div class="page-container">
           <router-view v-slot="{ Component }">
             <transition name="page" mode="out-in">
@@ -228,15 +237,14 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, h, inject } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useMessage } from 'naive-ui'
+import { NButton, NIcon, NLayout, NLayoutContent, NLayoutSider, NModal, NSwitch, useMessage } from 'naive-ui'
 import { useUserStore } from '@/stores/user'
 import {
   Database, Upload, Layers, Mail, Download,
   Settings, Help, LogOut, Refresh
 } from "@/utils/icons"
-import { MenuOutline as Menu } from '@vicons/ionicons5'
+import { MenuOutline as Menu, SunnyOutline as Sunny, MoonOutline as Moon } from '@vicons/ionicons5'
 import { useTabScroll } from '@/composables/useTabScroll'
-import sakuraBg from '@/assets/sakura/sakura-bg.webp'
 import petalA from '@/assets/sakura/petal-a.webp'
 import petalB from '@/assets/sakura/petal-b.webp'
 const router = useRouter()
@@ -253,13 +261,17 @@ const isMobile = ref(false)
 // Auto-collapse sidebar on small screens
 const MOBILE_BREAKPOINT = 900
 
+let resizeRafId = null
 function handleResize() {
-  isMobile.value = window.innerWidth < MOBILE_BREAKPOINT
-  if (isMobile.value) {
-    sidebarCollapsed.value = true
-  } else {
-    sidebarCollapsed.value = false
-  }
+  if (resizeRafId) cancelAnimationFrame(resizeRafId)
+  resizeRafId = requestAnimationFrame(() => {
+    isMobile.value = window.innerWidth < MOBILE_BREAKPOINT
+    if (isMobile.value) {
+      sidebarCollapsed.value = true
+    } else {
+      sidebarCollapsed.value = false
+    }
+  })
 }
 
 function navigate(path) {
@@ -278,6 +290,23 @@ const avatarText = computed(() => {
 const showWelcome = ref(false)
 const displayName = computed(() => userStore.user?.name || userStore.user?.username || '小伙伴')
 const petals = ref([])
+
+// 持续写实花瓣飘落（与登录欢迎动画独立，常驻显示）
+const fallPetals = ref([])
+// 初始化持续飘落花瓣
+for (let i = 0; i < 4; i++) {
+  fallPetals.value.push({
+    id: i,
+    src: i % 2 === 0 ? petalA : petalB,
+    style: {
+      left: `${Math.random() * 100}%`,
+      animationDelay: `${i * 4}s`,
+      animationDuration: `${12 + Math.random() * 6}s`,
+      width: `${12 + Math.random() * 10}px`,
+      height: 'auto',
+    }
+  })
+}
 
 const greeting = computed(() => {
   const h = new Date().getHours()
@@ -353,27 +382,82 @@ onUnmounted(() => {
 <style scoped>
 .main-layout {
   height: 100vh;
+  height: 100dvh;
 }
 
-/* ---- 真实樱花氛围背景（侧栏玻璃透出） ---- */
-.bg-sakura {
+/* ---- 极光柔彩背景（纯CSS） ---- */
+.bg-aurora {
   position: fixed;
   inset: 0;
   z-index: -1;
   overflow: hidden;
   pointer-events: none;
+  background: var(--bg);
 }
 
-.bg-photo {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: left center;
-  opacity: 0.8;
+/* Aurora glow — slow rotating conic gradient */
+.aurora-glow {
+  position: absolute;
+  inset: -30%;
+  background: conic-gradient(
+    from 0deg at 50% 50%,
+    transparent 0deg,
+    rgba(240, 101, 149, 0.06) 50deg,
+    transparent 110deg,
+    rgba(155, 125, 212, 0.05) 170deg,
+    transparent 230deg,
+    rgba(255, 143, 177, 0.04) 290deg,
+    transparent 360deg
+  );
+  filter: blur(60px);
+  animation: aurora-rotate 50s linear infinite;
+  will-change: transform;
 }
 
-[data-theme="dark"] .bg-photo {
-  opacity: 0.45;
+[data-theme="dark"] .aurora-glow {
+  background: conic-gradient(
+    from 0deg at 50% 50%,
+    transparent 0deg,
+    rgba(240, 101, 149, 0.10) 50deg,
+    transparent 110deg,
+    rgba(155, 125, 212, 0.08) 170deg,
+    transparent 230deg,
+    rgba(255, 143, 177, 0.06) 290deg,
+    transparent 360deg
+  );
+  filter: blur(80px);
+}
+
+@keyframes aurora-rotate {
+  from { transform: rotate(0deg) scale(1.1); }
+  to { transform: rotate(360deg) scale(1.1); }
+}
+
+/* Fine grain texture */
+.aurora-grain {
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.025;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+[data-theme="dark"] .aurora-grain {
+  opacity: 0.04;
+  mix-blend-mode: screen;
+}
+
+/* Vignette */
+.aurora-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 90% 80% at 50% 45%, transparent 50%, rgba(61,43,60,0.06) 100%);
+  pointer-events: none;
+}
+
+[data-theme="dark"] .aurora-vignette {
+  background: radial-gradient(ellipse 90% 80% at 50% 45%, transparent 40%, rgba(0,0,0,0.4) 100%);
 }
 
 /* ---- 持续写实花瓣飘落 ---- */
@@ -391,7 +475,7 @@ onUnmounted(() => {
   opacity: 0;
   will-change: transform, opacity;
   animation: fall-sway linear infinite;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.1));
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.08));
 }
 
 [data-theme="dark"] .fall-petal {
@@ -404,13 +488,14 @@ onUnmounted(() => {
     opacity: 0;
   }
   8% {
-    opacity: 0.9;
+    opacity: 0.5;
   }
   92% {
-    opacity: 0.9;
+    opacity: 0.5;
   }
   100% {
     transform: translateY(calc(100vh + 80px)) translateX(var(--sway)) rotate(calc(var(--rotate-start) + 360deg));
+    transform: translateY(calc(100dvh + 80px)) translateX(var(--sway)) rotate(calc(var(--rotate-start) + 360deg));
     opacity: 0;
   }
 }
@@ -641,18 +726,19 @@ onUnmounted(() => {
 
 .page-container {
   min-height: 100vh;
+  min-height: 100dvh;
   padding: 0;
 }
 
-/* ---- Mobile toggle (hidden on desktop) ---- */
-.mobile-toggle {
+/* ---- Mobile top bar (hidden on desktop) ---- */
+.mobile-topbar {
   display: none;
-  position: fixed;
-  top: 12px;
-  left: 12px;
-  z-index: 300;
-  width: 40px;
-  height: 40px;
+}
+
+.mobile-topbar-btn {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
   border: 1px solid var(--glass-border);
   border-radius: var(--r-sm);
   background: var(--glass-bg);
@@ -660,14 +746,25 @@ onUnmounted(() => {
   -webkit-backdrop-filter: var(--glass-blur);
   color: var(--primary-d);
   cursor: pointer;
+  display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-sm);
   transition: all 0.2s ease;
 }
 
-.mobile-toggle:hover {
-  box-shadow: var(--shadow-pink);
+.mobile-topbar-btn:active {
+  transform: scale(0.92);
+}
+
+.mobile-topbar-title {
+  font-family: 'Quicksand', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--primary-d);
+  letter-spacing: -0.3px;
+  flex: 1;
+  text-align: center;
 }
 
 /* ---- Responsive ---- */
@@ -686,16 +783,35 @@ onUnmounted(() => {
 }
 
 @media (max-width: 900px) {
-  .mobile-toggle {
+  .mobile-topbar {
     display: flex;
+    align-items: center;
+    gap: 8px;
+    position: sticky;
+    top: 0;
+    z-index: 200;
+    padding: calc(env(safe-area-inset-top, 0px) + 8px) 12px 8px;
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border-bottom: 1px solid var(--glass-border);
+    box-shadow: 0 1px 8px -4px rgba(240, 101, 149, 0.1);
   }
 
   :deep(.n-layout-sider) {
     position: fixed !important;
-    z-index: 100;
+    z-index: 300;
     height: 100vh;
+    height: 100dvh;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     box-shadow: 4px 0 32px -8px rgba(0, 0, 0, 0.3);
     transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* Sidebar scroll container safe-area */
+  :deep(.n-layout-sider .n-layout-sider-scroll-container) {
+    padding-top: env(safe-area-inset-top, 0px);
   }
 
   :deep(.n-layout-sider.n-layout-sider--collapsed) {
@@ -704,12 +820,6 @@ onUnmounted(() => {
 
   .page-container {
     padding-top: 0;
-  }
-}
-
-@media (min-width: 901px) {
-  .mobile-toggle {
-    display: none;
   }
 }
 
@@ -733,6 +843,16 @@ onUnmounted(() => {
 
 /* ---- Mobile responsive extras ---- */
 @media (max-width: 480px) {
+  .mobile-topbar {
+    padding: calc(env(safe-area-inset-top, 0px) + 6px) 10px 6px;
+  }
+  .mobile-topbar-title {
+    font-size: 15px;
+  }
+  .mobile-topbar-btn {
+    width: 44px;
+    height: 44px;
+  }
   .sidebar-brand {
     padding: 16px;
   }
@@ -745,6 +865,7 @@ onUnmounted(() => {
   .nav-item {
     padding: 8px 10px;
     font-size: 12px;
+    min-height: 44px;
   }
   .nav-section-title {
     font-size: 9px;

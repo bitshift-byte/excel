@@ -94,11 +94,34 @@ _static_dir = _resource_path("templates/static")
 if os.path.isdir(_static_dir):
     app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
-# Vue 前端构建产物
+# Vue 前端构建产物 —— 带长缓存头（文件名含 hash，可安全永久缓存）
 if config.USE_VUE_FRONTEND:
     _vue_assets = os.path.join(config.VUE_DIST_DIR, "assets")
     if os.path.isdir(_vue_assets):
-        app.mount("/assets", StaticFiles(directory=_vue_assets), name="vue-assets")
+        from starlette.types import Scope, Receive, Send
+
+        class CachedStaticFiles(StaticFiles):
+            """静态资源带 Cache-Control: immutable 头，浏览器永久缓存"""
+            async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+                async def send_wrapper(message):
+                    if message["type"] == "http.response.start":
+                        headers = dict(message.get("headers", []))
+                        # 转为 list of tuples 方便修改
+                        new_headers = []
+                        cache_set = False
+                        for k, v in message.get("headers", []):
+                            if k == b"cache-control":
+                                new_headers.append((k, v))
+                                cache_set = True
+                            else:
+                                new_headers.append((k, v))
+                        if not cache_set:
+                            new_headers.append((b"cache-control", b"public, max-age=31536000, immutable"))
+                        message["headers"] = new_headers
+                    await send(message)
+                await super().__call__(scope, receive, send_wrapper)
+
+        app.mount("/assets", CachedStaticFiles(directory=_vue_assets), name="vue-assets")
 
 # 认证中间件
 app.add_middleware(GZipMiddleware, minimum_size=512)  # gzip压缩静态资源，1.1MB JS→316KB

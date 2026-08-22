@@ -1,8 +1,10 @@
 <template>
   <div class="login-page">
-    <!-- 真实樱花背景 + 写实花瓣飘落 -->
-    <div class="bg-deco">
-      <img class="bg-photo" :src="sakuraBg" alt="sakura background" />
+    <!-- 极光柔彩背景 -->
+    <div class="bg-aurora">
+      <div class="aurora-glow"></div>
+      <div class="aurora-grain"></div>
+      <div class="aurora-vignette"></div>
       <div class="petal-layer">
         <img
           v-for="p in petals"
@@ -10,6 +12,7 @@
           class="petal"
           :src="p.src"
           alt=""
+          loading="lazy"
           :style="p.style"
         />
       </div>
@@ -89,12 +92,12 @@
 </template>
 
 <script setup>
+import { NButton, NForm, NFormItem, NIcon, NInput } from 'naive-ui'
 import { ref, reactive, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { authApi } from '@/api'
 import { Database, User, Lock, Alert } from "@/utils/icons"
-import sakuraBg from '@/assets/sakura/sakura-bg.webp'
 import petalA from '@/assets/sakura/petal-a.webp'
 import petalB from '@/assets/sakura/petal-b.webp'
 
@@ -108,13 +111,13 @@ const errorMsg = ref('')
 
 /* 真实樱花飘落花瓣 */
 const petalImages = [petalA, petalB]
-const petals = Array.from({ length: 22 }, (_, i) => {
+const petals = Array.from({ length: 12 }, (_, i) => {
   const img = petalImages[i % 2]
-  const size = 16 + Math.random() * 26
+  const size = 12 + Math.random() * 16
   const left = Math.random() * 100
-  const duration = 11 + Math.random() * 13
-  const delay = Math.random() * -22
-  const sway = 35 + Math.random() * 55
+  const duration = 14 + Math.random() * 16
+  const delay = Math.random() * -28
+  const sway = 20 + Math.random() * 40
   const rotate = Math.random() * 360
   return {
     id: i,
@@ -178,6 +181,7 @@ async function handleLogin() {
 .login-page {
   width: 100%;
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -191,31 +195,86 @@ async function handleLogin() {
   position: fixed;
   inset: 0;
   z-index: 1;
-  background: linear-gradient(135deg, rgba(255,250,252,0.55) 0%, rgba(255,245,248,0.35) 100%);
-  backdrop-filter: blur(1px);
+  background: radial-gradient(ellipse 120% 100% at 50% 50%, transparent 40%, rgba(61,43,60,0.04) 100%);
   pointer-events: none;
 }
 
 [data-theme="dark"] .login-page::before {
-  background: linear-gradient(135deg, rgba(22,15,28,0.82) 0%, rgba(32,20,34,0.72) 100%);
-  backdrop-filter: blur(5px);
+  background: radial-gradient(ellipse 120% 100% at 50% 50%, transparent 30%, rgba(0,0,0,0.35) 100%);
 }
 
-.bg-deco {
+.bg-aurora {
   position: fixed;
   inset: 0;
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
+  background: var(--bg);
 }
 
-.bg-photo {
+/* Aurora glow — slow rotating conic gradient, ultra-subtle */
+.aurora-glow {
+  position: absolute;
+  inset: -30%;
+  background: conic-gradient(
+    from 0deg at 50% 50%,
+    transparent 0deg,
+    rgba(240, 101, 149, 0.06) 50deg,
+    transparent 110deg,
+    rgba(155, 125, 212, 0.05) 170deg,
+    transparent 230deg,
+    rgba(255, 143, 177, 0.04) 290deg,
+    transparent 360deg
+  );
+  filter: blur(60px);
+  animation: aurora-rotate 50s linear infinite;
+  will-change: transform;
+}
+
+[data-theme="dark"] .aurora-glow {
+  background: conic-gradient(
+    from 0deg at 50% 50%,
+    transparent 0deg,
+    rgba(240, 101, 149, 0.10) 50deg,
+    transparent 110deg,
+    rgba(155, 125, 212, 0.08) 170deg,
+    transparent 230deg,
+    rgba(255, 143, 177, 0.06) 290deg,
+    transparent 360deg
+  );
+  filter: blur(80px);
+}
+
+@keyframes aurora-rotate {
+  from { transform: rotate(0deg) scale(1.1); }
+  to { transform: rotate(360deg) scale(1.1); }
+}
+
+/* Fine grain texture — prevents banding, adds premium tactile quality */
+.aurora-grain {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.025;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+[data-theme="dark"] .aurora-grain {
+  opacity: 0.04;
+  mix-blend-mode: screen;
+}
+
+/* Vignette — subtle edge darkening for depth */
+.aurora-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 90% 80% at 50% 45%, transparent 50%, rgba(61,43,60,0.06) 100%);
+  pointer-events: none;
+}
+
+[data-theme="dark"] .aurora-vignette {
+  background: radial-gradient(ellipse 90% 80% at 50% 45%, transparent 40%, rgba(0,0,0,0.4) 100%);
 }
 
 .petal-layer {
@@ -231,7 +290,7 @@ async function handleLogin() {
   opacity: 0;
   will-change: transform, opacity;
   animation: fall-sway linear infinite;
-  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.12));
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.08));
 }
 
 [data-theme="dark"] .petal {
@@ -244,10 +303,10 @@ async function handleLogin() {
     opacity: 0;
   }
   8% {
-    opacity: 0.9;
+    opacity: 0.55;
   }
   92% {
-    opacity: 0.9;
+    opacity: 0.55;
   }
   100% {
     transform: translateY(calc(100vh + 80px)) translateX(var(--sway)) rotate(calc(var(--rotate-start) + 360deg));
@@ -265,8 +324,28 @@ async function handleLogin() {
 
 .login-card {
   border-radius: var(--r-xl);
-  box-shadow: var(--shadow-xl);
+  box-shadow: var(--shadow-xl), 0 0 0 1px rgba(255,255,255,0.5) inset;
   padding: 40px 36px;
+  transition: box-shadow .4s var(--ease-spring), transform .4s var(--ease-spring);
+  position: relative;
+}
+
+.login-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-xl);
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(240,101,149,0.2), transparent 40%, transparent 60%, rgba(155,125,212,0.15));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.login-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 24px 56px -12px rgba(240,101,149,.25), 0 8px 20px -6px rgba(61,43,60,.08);
 }
 
 .logo-area {
@@ -284,6 +363,12 @@ async function handleLogin() {
   align-items: center;
   justify-content: center;
   box-shadow: var(--shadow-pink);
+  animation: logo-glow 3s ease-in-out infinite;
+}
+
+@keyframes logo-glow {
+  0%, 100% { box-shadow: 0 8px 24px -6px rgba(240,101,149,.32); }
+  50% { box-shadow: 0 8px 32px -4px rgba(240,101,149,.45); }
 }
 
 .title {

@@ -10,6 +10,10 @@
           <template #icon><n-icon><Zap /></n-icon></template>
           立即执行
         </n-button>
+        <n-button v-if="userStore.isAdmin && running" type="error" @click="cancelRun">
+          <template #icon><n-icon><Close /></n-icon></template>
+          取消执行
+        </n-button>
         <n-button @click="refreshAll">
           <template #icon><n-icon><Refresh /></n-icon></template>
           刷新
@@ -77,6 +81,7 @@
         :bordered="false"
         size="small"
         :loading="resultsLoading"
+        :row-key="(row, index) => index"
       />
       <n-empty v-if="!resultFiles.length && !resultsLoading" description="暂无处理结果" size="small" style="padding: 20px" />
     </n-card>
@@ -227,16 +232,17 @@
 
 <script setup>
 import { ref, reactive, h, onMounted } from 'vue'
-import { useMessage, NButton, NSpace, NIcon, NTag, NTabs, NTabPane, NSpin, NEmpty } from 'naive-ui'
+import { NButton, NCard, NDataTable, NDatePicker, NEmpty, NIcon, NModal, NSpace, NSpin, NTabPane, NTabs, NTag, useMessage } from 'naive-ui'
 import { useUserStore } from '@/stores/user'
 import { mailApi } from '@/api'
-import { Mail, Zap, Download, Refresh, Layers, ChevronForward, Eye, Grid } from '@/utils/icons'
+import { Mail, Zap, Download, Refresh, Layers, ChevronForward, Eye, Grid, Close } from '@/utils/icons'
 
 const message = useMessage()
 const userStore = useUserStore()
 
 const config = ref({})
 const running = ref(false)
+const runController = ref(null)
 const showRunModal = ref(false)
 const runDate = ref(null)
 const logExpanded = ref(false)
@@ -344,9 +350,11 @@ async function loadConfig() {
     const data = await mailApi.config()
     if (data.status === 'success') {
       config.value = data.config || {}
+    } else {
+      message.error(data.detail || '加载邮件配置失败')
     }
   } catch (e) {
-    // silent
+    message.error('加载邮件配置失败: ' + e.message)
   }
 }
 
@@ -354,9 +362,13 @@ async function loadResults() {
   resultsLoading.value = true
   try {
     const data = await mailApi.results()
-    if (data.status === 'success' && data.files) {
-      resultFiles.value = data.files
+    if (data.status === 'success') {
+      resultFiles.value = data.files || []
+    } else {
+      message.error(data.detail || '加载处理结果失败')
     }
+  } catch (e) {
+    message.error('加载处理结果失败: ' + e.message)
   } finally {
     resultsLoading.value = false
   }
@@ -366,21 +378,43 @@ async function loadTasks() {
   tasksLoading.value = true
   try {
     const data = await mailApi.tasks()
-    if (data.status === 'success' && data.tasks) {
-      tasks.value = data.tasks
+    if (data.status === 'success') {
+      tasks.value = data.tasks || []
+    } else {
+      message.error(data.detail || '加载捞取任务失败')
     }
+  } catch (e) {
+    message.error('加载捞取任务失败: ' + e.message)
   } finally {
     tasksLoading.value = false
   }
 }
 
-function downloadFile(filename) {
-  const a = document.createElement('a')
-  a.href = mailApi.resultFile(filename)
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
+async function downloadFile(filename) {
+  const loadingMsg = message.loading('正在准备下载...', { duration: 0 })
+  try {
+    const resp = await fetch(mailApi.resultFile(filename), { credentials: 'same-origin' })
+    if (!resp.ok) {
+      let detail = `下载失败 (HTTP ${resp.status})`
+      try { const err = await resp.json(); detail = err.detail || detail } catch (_) {}
+      message.error(detail)
+      return
+    }
+    const blob = await resp.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    message.success('文件已下载')
+  } catch (e) {
+    message.error('下载失败：' + e.message)
+  } finally {
+    loadingMsg.destroy()
+  }
 }
 
 async function previewExcel(filename) {
@@ -405,7 +439,16 @@ async function previewExcel(filename) {
 async function confirmRun() {
   showRunModal.value = false
   running.value = true
-  message.loading('正在执行，可能需要几十秒...', { duration: 5000 })
+  let elapsed = 0
+  const loadingMsg = message.loading('正在执行，已等待 0 秒...', { duration: 0 })
+  const timer = setInterval(() => {
+    elapsed++
+    loadingMsg.content = `正在执行，已等待 ${elapsed} 秒...`
+  }, 1000)
+
+  const controller = new AbortController()
+  runController.value = controller
+
   try {
     let dateStr = ''
     if (runDate.value) {
@@ -415,17 +458,68 @@ async function confirmRun() {
       const day = String(d.getDate()).padStart(2, '0')
       dateStr = `${y}-${m}-${day}`
     }
-    const data = await mailApi.run(dateStr)
+
+    // mailApi.run does not forward an AbortSignal and axios enforces a 30s
+    // timeout, so use a direct fetch to support cancellation on long runs.
+    const resp = await fetch('/api/mail/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: dateStr }),
+      credentials: 'same-origin',
+      signal: controller.signal,
+    })
+
+    if (resp.status === 401) {
+      message.error('登录已过期，请重新登录')
+      return
+    }
+
+    let payload = null
+    try {
+      payload = await resp.json()
+    } catch (_) {
+      /* ignore JSON parse errors */
+    }
+
+    if (!resp.ok) {
+      const detail = (payload && payload.detail) || `执行失败 (HTTP ${resp.status})`
+      message.error(detail)
+      return
+    }
+
+    // Unwrap like the axios response interceptor (unwrap payload.data if present)
+    let data = payload
+    if (payload && typeof payload === 'object' && 'data' in payload) {
+      data = payload.data
+    }
+
     if (data.status === 'success') {
       message.success(`执行完成，处理 ${data.handled} 封邮件`)
-      if (data.logs) logs.value = data.logs
-      loadResults()
-      loadTasks()
+      if (data.logs) {
+        logs.value = data.logs
+        logExpanded.value = true
+      }
+      refreshAll()
     } else {
       message.error(data.detail || '执行失败')
     }
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      message.info('已取消执行')
+    } else {
+      message.error('执行失败：' + e.message)
+    }
   } finally {
+    clearInterval(timer)
+    runController.value = null
     running.value = false
+    loadingMsg.destroy()
+  }
+}
+
+function cancelRun() {
+  if (runController.value) {
+    runController.value.abort()
   }
 }
 
@@ -559,24 +653,7 @@ onMounted(() => {
   box-shadow: 0 0 0 2px var(--primary-bg);
 }
 
-/* Primary buttons: sakura gradient + pink glow + hover lift */
-:deep(.n-button.n-button--primary-type) {
-  background: var(--grad-sakura);
-  border: none;
-  color: #fff;
-  box-shadow: var(--shadow-pink);
-  transition: transform var(--dur) var(--ease-spring),
-              box-shadow var(--dur) var(--ease-spring);
-}
-
-:deep(.n-button.n-button--primary-type:hover) {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-lg);
-}
-
-:deep(.n-button.n-button--primary-type:active) {
-  transform: translateY(0);
-}
+/* Primary buttons: handled by global.css premium button system */
 
 /* Data tables: bold headers, pink hover */
 :deep(.n-data-table .n-data-table-thead .n-data-table-th) {
@@ -590,14 +667,20 @@ onMounted(() => {
 }
 
 /* Responsive */
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .page-view {
-    padding: 16px;
+    padding: 16px 12px;
   }
 
   .page-header {
     flex-direction: column;
     gap: 12px;
+  }
+  .page-header .n-space {
+    width: 100%;
+  }
+  .page-header .n-button {
+    flex: 1;
   }
 
   .config-grid {

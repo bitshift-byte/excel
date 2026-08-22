@@ -7,6 +7,11 @@
       </div>
     </div>
 
+    <n-steps :current="currentStep" class="steps-bar" size="small">
+      <n-step title="选择来源" description="选邮件产物 + 上传总表" />
+      <n-step title="结果下载" description="查看并下载结果" />
+    </n-steps>
+
     <!-- Step 1: 选邮件产物 + 上传总表 → 一键合并 -->
     <div v-if="currentStep === 1" class="step-content animate-fade">
       <!-- 左右两栏：左边选邮件产物，右边上传总表 -->
@@ -97,11 +102,11 @@
           </n-upload>
 
           <div v-if="selectedFiles.length" class="file-chips">
-            <div v-for="(f, idx) in selectedFiles" :key="idx" class="file-chip">
+            <div v-for="(f, idx) in selectedFiles" :key="f.name" class="file-chip">
               <n-icon :size="16" color="var(--primary)"><File /></n-icon>
               <span class="chip-name">{{ f.name }}</span>
               <span class="chip-size">{{ (f.size / 1024).toFixed(0) }}KB</span>
-              <n-button quaternary circle size="tiny" @click="removeFile(idx)">
+              <n-button quaternary circle size="tiny" @click="removeFile(f.name)">
                 <template #icon><n-icon><Close /></n-icon></template>
               </n-button>
             </div>
@@ -199,13 +204,31 @@
               <n-tag size="small" round type="success">{{ pv.total }} 行</n-tag>
             </div>
             <div class="result-body">
+              <!-- Mobile card view -->
+              <div v-if="isMobile" class="mobile-preview-cards">
+                <n-empty v-if="!previewTables[pi].data.length" description="无数据" />
+                <n-card
+                  v-for="(row, idx) in previewTables[pi].data"
+                  :key="idx"
+                  size="small"
+                  class="mobile-data-card"
+                >
+                  <div class="card-row" v-for="col in previewTables[pi].columns" :key="col.key">
+                    <span class="card-label">{{ col.title }}</span>
+                    <span class="card-value">{{ row[col.key] }}</span>
+                  </div>
+                </n-card>
+              </div>
+              <!-- Desktop table view -->
               <n-data-table
-                :columns="pv.headers.map(h => ({ title: h, key: h, ellipsis: { tooltip: true }, width: 120 }))"
-                :data="pv.rows.map(row => { const obj = {}; pv.headers.forEach((h, i) => obj[h] = row[i] || ''); return obj; })"
+                v-else
+                :columns="previewTables[pi].columns"
+                :data="previewTables[pi].data"
                 :bordered="false"
                 size="small"
                 :max-height="400"
-                :scroll-x="pv.headers.length * 120"
+                :scroll-x="previewTables[pi].scrollX"
+                :row-key="(row, index) => index"
               />
             </div>
             <div v-if="pv.total > pv.preview_count" class="result-note">
@@ -230,12 +253,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { useMessage } from 'naive-ui'
+import { ref, computed, onMounted } from 'vue'
+import { NButton, NCard, NDataTable, NEmpty, NIcon, NInputNumber, NRadio, NSpin, NStep, NSteps, NTag, NUpload, NUploadDragger, useMessage } from 'naive-ui'
 import { mailMergeApi } from '@/api'
 import { Upload, File, Close, Zap, Download, Layers } from '@/utils/icons'
+import { useResponsive } from '@/composables/useResponsive'
 
 const message = useMessage()
+const { isMobile } = useResponsive()
+const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 const currentStep = ref(1)
 
 // Step 1
@@ -251,6 +277,18 @@ const deliveryMax = ref(null)
 // Step 2
 const stats = ref({})
 const previews = ref([])
+
+const previewTables = computed(() =>
+  previews.value.map(pv => {
+    const columns = pv.headers.map(h => ({ title: h, key: h, ellipsis: { tooltip: true }, width: 120 }))
+    const data = pv.rows.map(row => {
+      const obj = {}
+      pv.headers.forEach((h, i) => { obj[h] = row[i] || '' })
+      return obj
+    })
+    return { columns, data, scrollX: pv.headers.length * 120 }
+  })
+)
 
 async function loadMailResults() {
   loadingMailResults.value = true
@@ -272,13 +310,20 @@ function handleFileChange({ fileList: newList }) {
   fileList.value = newList
   selectedFiles.value = newList
     .filter(f => f.file && /\.(xlsx|xls)$/i.test(f.name))
+    .filter(f => {
+      if (f.file.size > MAX_FILE_SIZE) {
+        message.error(`文件 "${f.name}" 超过 50MB 限制（当前 ${(f.file.size / 1024 / 1024).toFixed(1)}MB），已忽略`)
+        return false
+      }
+      return true
+    })
     .map(f => f.file)
     .filter((f, i, arr) => arr.findIndex(x => x.name === f.name) === i)
 }
 
-function removeFile(idx) {
-  selectedFiles.value.splice(idx, 1)
-  fileList.value.splice(idx, 1)
+function removeFile(name) {
+  selectedFiles.value = selectedFiles.value.filter(f => f.name !== name)
+  fileList.value = fileList.value.filter(f => f.name !== name)
 }
 
 async function runMerge() {
@@ -287,7 +332,7 @@ async function runMerge() {
     return
   }
   merging.value = true
-  message.loading('正在合并数据...', { duration: 5000 })
+  const loadingMsg = message.loading('正在合并数据...', { duration: 0 })
   try {
     const fd = new FormData()
     if (selectedMailFile.value) {
@@ -312,18 +357,43 @@ async function runMerge() {
     message.error('请求出错: ' + e.message)
   } finally {
     merging.value = false
+    loadingMsg.destroy()
   }
 }
 
 function goStep(n) { currentStep.value = n }
 
-function downloadLatest() {
-  const a = document.createElement('a')
-  a.href = mailMergeApi.download()
-  a.download = ''
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
+async function downloadLatest() {
+  const loadingMsg = message.loading('正在准备下载...', { duration: 0 })
+  try {
+    const resp = await fetch(mailMergeApi.download(), { credentials: 'same-origin' })
+    if (!resp.ok) {
+      let detail = `下载失败 (HTTP ${resp.status})`
+      try { const err = await resp.json(); detail = err.detail || detail } catch (_) {}
+      message.error(detail)
+      return
+    }
+    const disposition = resp.headers.get('content-disposition')
+    let filename = '邮件合并结果.xlsx'
+    if (disposition) {
+      const match = disposition.match(/filename\*?=(?:UTF-8'')?(["']?)([^;"']+)\1/i)
+      if (match) filename = decodeURIComponent(match[2])
+    }
+    const blob = await resp.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    message.success('文件已下载')
+  } catch (e) {
+    message.error('下载失败：' + e.message)
+  } finally {
+    loadingMsg.destroy()
+  }
 }
 
 onMounted(() => {
@@ -332,6 +402,39 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* ============ Mobile Card Layout (preview table -> cards) ============ */
+.mobile-preview-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+.mobile-data-card {
+  border-radius: 12px;
+}
+.card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-light, #F0DEE7);
+}
+.card-row:last-child {
+  border-bottom: none;
+}
+.card-label {
+  color: var(--text-3, #8B7588);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.card-value {
+  color: var(--text, #3D2B3C);
+  font-size: 14px;
+  text-align: right;
+  word-break: break-all;
+}
+
 .page-view {
   padding: 32px;
   max-width: 1100px;
@@ -354,6 +457,10 @@ onMounted(() => {
   font-size: 13px;
   color: var(--text-3);
   font-weight: 500;
+}
+
+.steps-bar {
+  margin-bottom: 28px;
 }
 
 .step-content { margin-top: 8px; }

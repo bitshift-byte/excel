@@ -31,10 +31,10 @@
   --text-4: #8B7689;
   --border: #F0DEE7;
   --border-l: #F8E8EF;
-  --shadow-sm: 0 1px 3px rgba(61,43,60,.04);
-  --shadow-md: 0 4px 8px -2px rgba(240,101,149,.06), 0 2px 4px -1px rgba(61,43,60,.03);
-  --shadow-lg: 0 8px 24px -6px rgba(240,101,149,.15), 0 2px 8px -2px rgba(61,43,60,.04);
-  --shadow-xl: 0 16px 40px -8px rgba(240,101,149,.2), 0 4px 12px -4px rgba(61,43,60,.05);
+  --shadow-sm: 0 2px 8px -2px rgba(61,43,60,.08);
+  --shadow-md: 0 4px 16px -4px rgba(240,101,149,.10), 0 2px 8px -2px rgba(61,43,60,.05);
+  --shadow-lg: 0 12px 32px -8px rgba(240,101,149,.18), 0 4px 12px -4px rgba(61,43,60,.06);
+  --shadow-xl: 0 20px 48px -10px rgba(240,101,149,.22), 0 8px 20px -6px rgba(61,43,60,.08);
   --shadow-pink: 0 8px 24px -6px rgba(240,101,149,.32);
   --r-xl: 24px;
   --r-lg: 20px;
@@ -50,8 +50,8 @@
   --glass-blur: blur(16px);
   --ease-spring: cubic-bezier(.22,1,.36,1);
   --dur: .28s;
-  --font-display: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', 'Segoe UI', sans-serif;
-  --font-body: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  --font-display: 'Quicksand', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', 'Segoe UI', sans-serif;
+  --font-body: 'Nunito', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', 'Segoe UI', 'Microsoft YaHei', sans-serif;
 
   /* ---- 间距尺度 (4px 基数) ---- */
   --space-1: 4px;
@@ -72,6 +72,12 @@
   --text-lg: 16px;
   --text-xl: 20px;
   --text-2xl: 24px;
+
+  /* ---- 响应式断点 ---- */
+  --bp-sm: 640px;
+  --bp-md: 768px;
+  --bp-lg: 900px;
+  --bp-xl: 1024px;
 }
 
 * {
@@ -87,19 +93,38 @@ html, body {
 body {
   font-family: var(--font-body);
   background: var(--bg);
+  background-image:
+    radial-gradient(ellipse at 0% 0%, rgba(240, 101, 149, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 100% 100%, rgba(155, 125, 212, 0.05) 0%, transparent 50%);
+  background-attachment: fixed;
   color: var(--text);
   font-size: 14px;
   line-height: 1.65;
+  letter-spacing: 0.01em;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   overflow: hidden;
+  /* Mobile optimizations */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  touch-action: manipulation;
 }
 
 h1, h2, h3 {
   font-family: var(--font-display);
+  letter-spacing: -0.02em;
 }
+
+h1 { font-weight: 700; }
+h2 { font-weight: 600; }
+h3 { font-weight: 600; }
 
 #app {
   height: 100vh;
+  height: 100dvh;
 }
 
 /* ---- Animations ---- */
@@ -131,87 +156,279 @@ h1, h2, h3 {
 .animate-fade { animation: fade-in .3s ease both; }
 .animate-slide-up { animation: slide-up .35s ease both; }
 
-/* ---- 统一主按钮渐变(原仅在 Merge 页 scoped 生效,现全局一致)---- */
+/* ============================================================
+   高质量按钮系统 · Premium Button System
+   ============================================================ */
+
+/* ---- Primary 按钮:渐变 + 光泽扫掠 + 分层阴影 ---- */
 .n-button.n-button--primary-type {
-  background: var(--grad-sakura) !important;
+  background: linear-gradient(135deg, #F06595 0%, #E95891 50%, #D6336C 100%) !important;
   border: none !important;
-  box-shadow: 0 4px 12px rgba(240, 101, 149, 0.25) !important;
   font-weight: 700;
-  transition: box-shadow .2s var(--ease-spring), transform .2s var(--ease-spring);
+  letter-spacing: 0.02em;
+  color: #fff !important;
+  box-shadow:
+    0 1px 2px rgba(214, 51, 108, 0.2),
+    0 4px 12px -2px rgba(240, 101, 149, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition: transform .18s var(--ease-spring),
+              box-shadow .25s var(--ease-spring),
+              filter .2s ease;
   position: relative;
   overflow: hidden;
 }
 
-/* ---- 所有按钮通用:樱花花瓣纹理 + hover 飘落 ---- */
-/* Naive UI 按钮内部有 __border/__state 等绝对定位层会遮挡 ::before，
-   所以直接给内部层加花瓣背景，确保可见 */
-.n-button {
+/* 光泽扫掠层 */
+.n-button.n-button--primary-type .n-button__content {
+  position: relative;
+  z-index: 1;
+}
+
+.n-button.n-button--primary-type .n-button__border,
+.n-button.n-button--primary-type .n-button__state {
+  background: none !important;
+  opacity: 0 !important;
+}
+
+/* 光泽扫掠效果 */
+.n-button.n-button--primary-type::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -120%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 100%
+  );
+  transform: skewX(-20deg);
+  pointer-events: none;
+  transition: left .6s var(--ease-spring);
+}
+
+.n-button.n-button--primary-type:not(:disabled):hover::after {
+  left: 130%;
+}
+
+.n-button.n-button--primary-type:not(:disabled):hover {
+  filter: brightness(1.06);
+  transform: translateY(-2px);
+  box-shadow:
+    0 2px 4px rgba(214, 51, 108, 0.2),
+    0 8px 20px -4px rgba(240, 101, 149, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.n-button.n-button--primary-type:not(:disabled):active {
+  transform: translateY(0) scale(0.98);
+  box-shadow:
+    0 1px 3px rgba(214, 51, 108, 0.2),
+    0 2px 6px -2px rgba(240, 101, 149, 0.25),
+    inset 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.n-button.n-button--primary-type:disabled {
+  opacity: .5;
+  filter: saturate(0.6);
+  box-shadow: 0 1px 2px rgba(214, 51, 108, 0.1) !important;
+}
+
+/* ---- 默认/次要按钮:玻璃质感 ---- */
+.n-button:not(.n-button--primary-type):not(.n-button--text-type):not(.n-button--quaternary) {
+  background: var(--glass-bg) !important;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border) !important;
+  font-weight: 600;
+  color: var(--text-2) !important;
+  box-shadow:
+    0 1px 2px rgba(61, 43, 60, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transition: transform .18s var(--ease-spring),
+              box-shadow .25s var(--ease-spring),
+              border-color .2s ease,
+              color .2s ease;
   position: relative;
   overflow: hidden;
 }
-/* 花瓣纹理叠在按钮颜色层上 */
+
+.n-button:not(.n-button--primary-type):not(.n-button--text-type):not(.n-button--quaternary) .n-button__border,
+.n-button:not(.n-button--primary-type):not(.n-button--text-type):not(.n-button--quaternary) .n-button__state {
+  background: none !important;
+  opacity: 0 !important;
+}
+
+.n-button:not(.n-button--primary-type):not(.n-button--text-type):not(.n-button--quaternary):not(:disabled):hover {
+  border-color: var(--primary-l) !important;
+  color: var(--primary-d) !important;
+  transform: translateY(-1px);
+  box-shadow:
+    0 2px 8px -2px rgba(240, 101, 149, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.n-button:not(.n-button--primary-type):not(.n-button--text-type):not(.n-button--quaternary):not(:disabled):active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* ---- quaternary 按钮:极简透明 ---- */
+.n-button.n-button--quaternary-type:not(:disabled) {
+  transition: background .2s ease, transform .15s var(--ease-spring);
+}
+
+.n-button.n-button--quaternary-type:not(:disabled):hover {
+  background: var(--primary-bg) !important;
+}
+
+.n-button.n-button--quaternary-type:not(:disabled):active {
+  transform: scale(0.95);
+}
+
+/* ---- error 按钮 ---- */
+.n-button.n-button--error-type {
+  background: linear-gradient(135deg, #E64980 0%, #C2255C 100%) !important;
+  border: none !important;
+  font-weight: 700;
+  color: #fff !important;
+  box-shadow:
+    0 1px 2px rgba(194, 37, 92, 0.2),
+    0 4px 12px -2px rgba(230, 73, 128, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: transform .18s var(--ease-spring), box-shadow .25s var(--ease-spring), filter .2s ease;
+}
+
+.n-button.n-button--error-type:not(:disabled):hover {
+  filter: brightness(1.06);
+  transform: translateY(-2px);
+  box-shadow:
+    0 2px 4px rgba(194, 37, 92, 0.2),
+    0 8px 20px -4px rgba(230, 73, 128, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.n-button.n-button--error-type:not(:disabled):active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* ---- info 按钮 ---- */
+.n-button.n-button--info-type:not(.n-button--quaternary) {
+  background: linear-gradient(135deg, #9B7DD4 0%, #7B5BC4 100%) !important;
+  border: none !important;
+  font-weight: 700;
+  color: #fff !important;
+  box-shadow:
+    0 1px 2px rgba(123, 91, 196, 0.2),
+    0 4px 12px -2px rgba(155, 125, 212, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: transform .18s var(--ease-spring), box-shadow .25s var(--ease-spring), filter .2s ease;
+}
+
+.n-button.n-button--info-type:not(.n-button--quaternary):not(:disabled):hover {
+  filter: brightness(1.06);
+  transform: translateY(-2px);
+}
+
+.n-button.n-button--info-type:not(.n-button--quaternary):not(:disabled):active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* ---- success 按钮 ---- */
+.n-button.n-button--success-type:not(.n-button--quaternary) {
+  background: linear-gradient(135deg, #3DD4A6 0%, #22B888 100%) !important;
+  border: none !important;
+  font-weight: 700;
+  color: #fff !important;
+  box-shadow:
+    0 1px 2px rgba(34, 184, 136, 0.2),
+    0 4px 12px -2px rgba(61, 212, 166, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: transform .18s var(--ease-spring), box-shadow .25s var(--ease-spring), filter .2s ease;
+}
+
+.n-button.n-button--success-type:not(.n-button--quaternary):not(:disabled):hover {
+  filter: brightness(1.06);
+  transform: translateY(-2px);
+}
+
+.n-button.n-button--success-type:not(.n-button--quaternary):not(:disabled):active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* ---- warning 按钮 ---- */
+.n-button.n-button--warning-type:not(.n-button--quaternary) {
+  background: linear-gradient(135deg, #F6A609 0%, #D68910 100%) !important;
+  border: none !important;
+  font-weight: 700;
+  color: #fff !important;
+  box-shadow:
+    0 1px 2px rgba(214, 137, 16, 0.2),
+    0 4px 12px -2px rgba(246, 166, 9, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: transform .18s var(--ease-spring), box-shadow .25s var(--ease-spring), filter .2s ease;
+}
+
+.n-button.n-button--warning-type:not(.n-button--quaternary):not(:disabled):hover {
+  filter: brightness(1.06);
+  transform: translateY(-2px);
+}
+
+.n-button.n-button--warning-type:not(.n-button--quaternary):not(:disabled):active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* ---- 暗色模式微调 ---- */
+[data-theme="dark"] .n-button.n-button--primary-type {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 4px 12px -2px rgba(240, 101, 149, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="dark"] .n-button:not(.n-button--primary-type):not(.n-button--text-type):not(.n-button--quaternary) {
+  background: rgba(45, 32, 40, 0.72) !important;
+  border-color: rgba(61, 43, 60, 0.6) !important;
+  color: #D4BFCB !important;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+[data-theme="dark"] .n-button:not(.n-button--primary-type):not(.n-button--text-type):not(.n-button--quaternary):not(:disabled):hover {
+  border-color: var(--primary-l) !important;
+  color: var(--primary-l) !important;
+  background: rgba(240, 101, 149, 0.08) !important;
+}
+
+/* ---- 通用:禁止花瓣纹理 ---- */
 .n-button .n-button__border,
 .n-button .n-button__state {
-  background-image: url('@/assets/sakura/petal-a.webp') !important;
-  background-repeat: no-repeat !important;
-  background-size: 24px 24px !important;
-  background-position: 6px 50% !important;
-  opacity: 0.8 !important;
-}
-/* primary 按钮:花瓣叠在渐变上 */
-.n-button.n-button--primary-type .n-button__border,
-.n-button.n-button--primary-type .n-button__state {
-  background-size: 28px 28px !important;
-  background-position: 8px 50% !important;
-  opacity: 0.9 !important;
-}
-/* hover 时花瓣更实 */
-.n-button:not(:disabled):hover .n-button__border,
-.n-button:not(:disabled):hover .n-button__state {
-  opacity: 1 !important;
-}
-/* hover 时右上角飘出花瓣 —— 用按钮内容层做定位锚 */
-.n-button .n-button__content {
-  position: relative;
-}
-.n-button .n-button__content::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  right: -20px;
-  width: 12px;
-  height: 12px;
-  background-image: url('@/assets/sakura/petal-b.webp');
-  background-size: contain;
-  background-repeat: no-repeat;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity .15s ease, transform .4s var(--ease-spring);
-}
-.n-button:not(:disabled):hover .n-button__content::after {
-  opacity: 0.85;
-  transform: translateY(-10px) rotate(25deg);
-}
-.n-button.n-button--primary-type:not(:disabled):hover .n-button__content::after {
-  opacity: 0.95;
-  transform: translateY(-12px) rotate(25deg);
-}
-.n-button.n-button--primary-type:not(:disabled):hover {
-  box-shadow: 0 6px 16px rgba(240, 101, 149, 0.35) !important;
-  transform: translateY(-1px);
-}
-.n-button.n-button--primary-type:not(:disabled):active {
-  transform: translateY(0);
-}
-.n-button.n-button--primary-type:disabled {
-  opacity: .55;
-  box-shadow: none !important;
-}
-.n-button:disabled .n-button__border,
-.n-button:disabled .n-button__state,
-.n-button:disabled .n-button__content::after {
   background-image: none !important;
-  display: none;
+  opacity: 0 !important;
+}
+
+/* ---- 通用:disabled ---- */
+.n-button:disabled {
+  cursor: not-allowed;
+}
+
+/* ---- loading 状态:脉冲呼吸 ---- */
+.n-button.n-button--loading .n-button__content {
+  opacity: 0.7;
+}
+
+/* ---- round 按钮额外圆滑 ---- */
+.n-button.n-button--round-type,
+.n-button[round] {
+  border-radius: var(--r-pill) !important;
+}
+
+/* ---- focus-visible 无障碍焦点环 ---- */
+.n-button:focus-visible {
+  outline: 2px solid var(--primary-l);
+  outline-offset: 2px;
 }
 
 /* ---- 无障碍:尊重系统「减少动态效果」偏好 ---- */
@@ -238,6 +455,475 @@ button:not(.n-button):focus-visible,
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #E8C5D4; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #D6336C; }
+
+
+/* ============================================================
+   高质量组件系统 · Premium Component System
+   ============================================================ */
+
+/* ---- Card · 卡片 ---- */
+.n-card {
+  border-radius: var(--r-lg) !important;
+  transition: box-shadow .3s var(--ease-spring), transform .3s var(--ease-spring), border-color .25s ease;
+  box-shadow: var(--shadow-sm);
+}
+
+.n-card.n-card--hoverable {
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.n-card.n-card--hoverable:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-3px);
+  border-color: var(--primary-l) !important;
+}
+
+.n-card .n-card-header {
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+/* ---- Input · 输入框 ---- */
+.n-input {
+  transition: box-shadow .2s var(--ease-spring);
+}
+
+.n-input .n-input__border {
+  transition: border-color .2s var(--ease-spring), box-shadow .2s var(--ease-spring) !important;
+  border-radius: var(--r-sm) !important;
+}
+
+.n-input:not(.n-input--error-status):not(.n-input--focus) .n-input__border:hover {
+  border-color: var(--primary-l) !important;
+}
+
+.n-input.n-input--focus .n-input__border {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(240, 101, 149, 0.12) !important;
+}
+
+[data-theme="dark"] .n-input.n-input--focus .n-input__border {
+  box-shadow: 0 0 0 3px rgba(240, 101, 149, 0.18) !important;
+}
+
+/* Input prefix icon alignment */
+.n-input .n-input__prefix {
+  margin-right: 6px;
+}
+
+/* ---- Tag · 标签 ---- */
+.n-tag {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: var(--r-pill) !important;
+  transition: transform .15s var(--ease-spring);
+}
+
+.n-tag:not(.n-tag--disabled):hover {
+  transform: scale(1.04);
+}
+
+.n-tag.n-tag--primary-type {
+  background: linear-gradient(135deg, rgba(240, 101, 149, 0.12), rgba(214, 51, 108, 0.08)) !important;
+  border: 1px solid rgba(240, 101, 149, 0.2) !important;
+  color: var(--primary-d) !important;
+}
+
+.n-tag.n-tag--success-type {
+  background: linear-gradient(135deg, rgba(61, 212, 166, 0.12), rgba(34, 184, 136, 0.08)) !important;
+  border: 1px solid rgba(61, 212, 166, 0.2) !important;
+}
+
+.n-tag.n-tag--info-type {
+  background: linear-gradient(135deg, rgba(155, 125, 212, 0.12), rgba(123, 91, 196, 0.08)) !important;
+  border: 1px solid rgba(155, 125, 212, 0.2) !important;
+}
+
+.n-tag.n-tag--warning-type {
+  background: linear-gradient(135deg, rgba(246, 166, 9, 0.12), rgba(214, 137, 16, 0.08)) !important;
+  border: 1px solid rgba(246, 166, 9, 0.2) !important;
+}
+
+.n-tag.n-tag--error-type {
+  background: linear-gradient(135deg, rgba(230, 73, 128, 0.12), rgba(194, 37, 92, 0.08)) !important;
+  border: 1px solid rgba(230, 73, 128, 0.2) !important;
+}
+
+/* ---- Modal · 弹窗 ---- */
+.n-modal-container .n-card {
+  border-radius: var(--r-xl) !important;
+  box-shadow:
+    0 24px 64px -12px rgba(61, 43, 60, 0.25),
+    0 8px 24px -8px rgba(240, 101, 149, 0.1) !important;
+  overflow: hidden;
+}
+
+.n-modal-container .n-card-header {
+  border-bottom: 1px solid var(--border-l);
+  padding: 20px 24px 16px;
+}
+
+.n-modal-container .n-card__content {
+  padding: 20px 24px;
+}
+
+.n-modal-container .n-card__action {
+  border-top: 1px solid var(--border-l);
+  padding: 16px 24px;
+  background: var(--muted);
+}
+
+[data-theme="dark"] .n-modal-container .n-card {
+  box-shadow:
+    0 24px 64px -12px rgba(0, 0, 0, 0.6),
+    0 8px 24px -8px rgba(240, 101, 149, 0.15) !important;
+}
+
+[data-theme="dark"] .n-modal-container .n-card__action {
+  background: rgba(46, 32, 48, 0.5);
+}
+
+/* ---- Data Table · 数据表格 ---- */
+.n-data-table {
+  border-radius: var(--r-md) !important;
+  overflow: hidden;
+}
+
+.n-data-table .n-data-table-thead .n-data-table-th {
+  font-weight: 700 !important;
+  font-family: var(--font-display);
+  color: var(--text-2) !important;
+  background: var(--muted) !important;
+  border-bottom: 2px solid var(--border) !important;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.n-data-table .n-data-table-tr {
+  transition: background .15s ease;
+}
+
+.n-data-table .n-data-table-tr:not(.n-data-table-tr--summary):hover .n-data-table-td {
+  background: var(--primary-bg) !important;
+}
+
+.n-data-table .n-data-table-td {
+  transition: background .15s ease;
+  border-bottom: 1px solid var(--border-l) !important;
+}
+
+.n-data-table .n-data-table-tr:last-child .n-data-table-td {
+  border-bottom: none !important;
+}
+
+[data-theme="dark"] .n-data-table .n-data-table-thead .n-data-table-th {
+  background: rgba(46, 32, 48, 0.6) !important;
+  color: #D4BFCB !important;
+}
+
+[data-theme="dark"] .n-data-table .n-data-table-tr:not(.n-data-table-tr--summary):hover .n-data-table-td {
+  background: rgba(240, 101, 149, 0.08) !important;
+}
+
+/* ---- Switch · 开关 ---- */
+.n-switch.n-switch--active .n-switch__rail {
+  background: var(--grad-sakura) !important;
+  box-shadow: 0 2px 8px -2px rgba(240, 101, 149, 0.4);
+}
+
+.n-switch:not(.n-switch--active) .n-switch__rail {
+  background: var(--muted-2) !important;
+}
+
+.n-switch .n-switch__rail {
+  transition: background .25s var(--ease-spring), box-shadow .25s var(--ease-spring) !important;
+}
+
+.n-switch:focus-visible .n-switch__rail {
+  box-shadow: 0 0 0 3px rgba(240, 101, 149, 0.2);
+}
+
+/* ---- Tabs · 标签页 ---- */
+.n-tabs .n-tabs-tab {
+  font-weight: 600;
+  transition: color .2s ease, background .2s ease;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+}
+
+.n-tabs .n-tabs-tab:hover {
+  color: var(--primary) !important;
+}
+
+.n-tabs .n-tabs-tab.n-tabs-tab--active {
+  color: var(--primary-d) !important;
+  font-weight: 700;
+}
+
+.n-tabs .n-tabs-bar {
+  background: var(--grad-sakura) !important;
+  height: 3px !important;
+  border-radius: var(--r-pill) !important;
+  transition: width .3s var(--ease-spring), left .3s var(--ease-spring);
+}
+
+.n-tabs.n-tabs--card-type .n-tabs-tab {
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+}
+
+.n-tabs.n-tabs--card-type .n-tabs-tab.n-tabs-tab--active {
+  border-bottom-color: var(--surface) !important;
+  background: var(--surface);
+}
+
+/* ---- Select · 下拉选择 ---- */
+.n-base-selection .n-base-selection__border {
+  transition: border-color .2s var(--ease-spring), box-shadow .2s var(--ease-spring) !important;
+  border-radius: var(--r-sm) !important;
+}
+
+.n-base-selection:not(.n-base-selection--error):not(.n-base-selection--focus) .n-base-selection__border:hover {
+  border-color: var(--primary-l) !important;
+}
+
+.n-base-selection.n-base-selection--focus .n-base-selection__border {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(240, 101, 149, 0.12) !important;
+}
+
+[data-theme="dark"] .n-base-selection.n-base-selection--focus .n-base-selection__border {
+  box-shadow: 0 0 0 3px rgba(240, 101, 149, 0.18) !important;
+}
+
+/* ---- Input Number · 数字输入 ---- */
+.n-input-number .n-input-number__prefix,
+.n-input-number .n-input-number__suffix {
+  border-radius: var(--r-sm);
+}
+
+.n-input-number .n-input-number__button {
+  transition: background .15s ease, color .15s ease;
+}
+
+.n-input-number .n-input-number__button:hover {
+  background: var(--primary-bg);
+  color: var(--primary);
+}
+
+/* ---- Upload Dragger · 上传拖拽区 ---- */
+.n-upload-dragger {
+  border: 2px dashed var(--border) !important;
+  border-radius: var(--r-lg) !important;
+  transition: border-color .25s var(--ease-spring), background .25s ease;
+  background: var(--muted) !important;
+}
+
+.n-upload-dragger:hover {
+  border-color: var(--primary-l) !important;
+  background: var(--primary-bg) !important;
+}
+
+.n-upload-dragger.n-upload-dragger--dragover {
+  border-color: var(--primary) !important;
+  background: var(--primary-bg) !important;
+  box-shadow: 0 0 0 4px rgba(240, 101, 149, 0.1);
+}
+
+[data-theme="dark"] .n-upload-dragger {
+  background: rgba(46, 32, 48, 0.4) !important;
+}
+
+[data-theme="dark"] .n-upload-dragger:hover {
+  background: rgba(240, 101, 149, 0.06) !important;
+}
+
+/* ---- Steps · 步骤条 ---- */
+.n-steps .n-step-indicator {
+  transition: transform .2s var(--ease-spring);
+}
+
+.n-steps .n-step.n-step--finish .n-step-indicator {
+  background: var(--grad-sakura) !important;
+}
+
+.n-steps .n-step.n-step--process .n-step-indicator {
+  box-shadow: 0 0 0 4px rgba(240, 101, 149, 0.15);
+}
+
+.n-steps .n-step-description {
+  font-size: 12px;
+  color: var(--text-4);
+  transition: color .2s ease;
+}
+
+.n-steps .n-step.n-step--process .n-step-description {
+  color: var(--primary-d);
+  font-weight: 600;
+}
+
+/* ---- Divider · 分割线 ---- */
+.n-divider:not(.n-divider--vertical) {
+  margin: 16px 0;
+}
+
+.n-divider .n-divider__title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+/* ---- Spin · 加载 ---- */
+.n-spin .n-spin__icon {
+  color: var(--primary) !important;
+}
+
+.n-spin .n-spin-description {
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* ---- Empty · 空状态 ---- */
+.n-empty .n-empty__icon {
+  color: var(--text-4);
+  opacity: 0.5;
+}
+
+.n-empty .n-empty__description {
+  color: var(--text-4);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* ---- Checkbox · 复选框 ---- */
+.n-checkbox .n-checkbox-box {
+  transition: border-color .2s var(--ease-spring), background .2s var(--ease-spring), box-shadow .2s var(--ease-spring);
+  border-radius: 5px !important;
+}
+
+.n-checkbox.n-checkbox--checked .n-checkbox-box {
+  background: var(--grad-sakura) !important;
+  border-color: var(--primary) !important;
+  box-shadow: 0 2px 6px -2px rgba(240, 101, 149, 0.3);
+}
+
+.n-checkbox:not(.n-checkbox--disabled):not(.n-checkbox--checked) .n-checkbox-box:hover {
+  border-color: var(--primary-l) !important;
+}
+
+.n-checkbox.n-checkbox--indeterminate .n-checkbox-box {
+  background: var(--grad-sakura) !important;
+  border-color: var(--primary) !important;
+}
+
+/* ---- Radio · 单选框 ---- */
+.n-radio .n-radio__dot {
+  transition: border-color .2s var(--ease-spring), box-shadow .2s var(--ease-spring);
+}
+
+.n-radio.n-radio--checked .n-radio__dot {
+  border-color: var(--primary) !important;
+}
+
+.n-radio.n-radio--checked .n-radio__dot::before {
+  background: var(--primary) !important;
+}
+
+.n-radio:not(.n-radio--disabled):hover .n-radio__dot {
+  box-shadow: 0 0 0 3px rgba(240, 101, 149, 0.1);
+}
+
+/* ---- Dynamic Tags · 动态标签 ---- */
+.n-dynamic-tags .n-tag {
+  border-radius: var(--r-pill) !important;
+}
+
+/* ---- Date Picker · 日期选择器 ---- */
+.n-date-picker .n-input .n-input__border {
+  border-radius: var(--r-sm) !important;
+}
+
+/* ---- Form Item · 表单项 ---- */
+.n-form-item .n-form-item-label {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.n-form-item .n-form-item-label__asterisk {
+  color: var(--danger);
+}
+
+.n-form-item .n-form-item-feedback {
+  transition: opacity .2s ease;
+  font-size: 12px;
+  min-height: 18px;
+}
+
+.n-form-item.n-form-item--error .n-form-item-feedback {
+  color: var(--danger);
+}
+
+.n-form-item.n-form-item--success .n-form-item-feedback {
+  color: var(--accent-d);
+}
+
+/* ---- Space 间距 ---- */
+.n-space {
+  transition: gap .2s ease;
+}
+
+/* ---- Tooltip ---- */
+.n-tooltip {
+  font-size: 12px !important;
+  font-weight: 500;
+}
+
+/* ---- Popover ---- */
+.n-popover {
+  border-radius: var(--r-md) !important;
+}
+
+/* ---- Notification ---- */
+.n-notification {
+  border-radius: var(--r-lg) !important;
+}
+
+.n-notification .n-notification-main__header {
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+/* ---- Dropdown ---- */
+.n-dropdown-menu {
+  border-radius: var(--r-md) !important;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+.n-dropdown-menu .n-base-select-option {
+  transition: background .15s ease, color .15s ease;
+  font-weight: 500;
+}
+
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #E8C5D4; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #D6336C; }
+
+/* ---- Selection color ---- */
+::selection {
+  background: rgba(240, 101, 149, 0.15);
+  color: var(--primary-d);
+}
+
+/* ---- Link styling ---- */
+a {
+  transition: color .2s var(--ease-spring);
+}
 
 /* ---- Utility ---- */
 .glass {
@@ -298,10 +984,82 @@ button:not(.n-button):focus-visible,
   --danger-bg: rgba(230, 73, 128, .16);
   --glass-bg: rgba(38, 26, 40, .72);
   --glass-border: rgba(255, 255, 255, .12);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, .3);
-  --shadow-md: 0 4px 8px -2px rgba(0, 0, 0, .4);
-  --shadow-lg: 0 8px 24px -6px rgba(0, 0, 0, .5);
-  --shadow-xl: 0 16px 40px -8px rgba(0, 0, 0, .6);
+  --shadow-sm: 0 2px 8px -2px rgba(0, 0, 0, .35);
+  --shadow-md: 0 4px 16px -4px rgba(0, 0, 0, .45);
+  --shadow-lg: 0 12px 32px -8px rgba(0, 0, 0, .55);
+  --shadow-xl: 0 20px 48px -10px rgba(0, 0, 0, .65);
   --shadow-pink: 0 8px 24px -6px rgba(240, 101, 149, .4);
   --grad-warm: linear-gradient(135deg, #261A28, #2E2030);
+}
+
+/* Dark mode backgrounds for glass/blur elements */
+[data-theme="dark"] .glass-card,
+[data-theme="dark"] .glass-panel,
+[data-theme="dark"] .blur-card {
+  background: rgba(38, 26, 40, 0.72) !important;
+  border-color: rgba(61, 43, 60, 0.5) !important;
+}
+
+/* Dark mode for scrollbars */
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #3D2B3C;
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #5C4555;
+}
+
+/* Dark mode selection */
+[data-theme="dark"] ::selection {
+  background: rgba(240, 101, 149, 0.25);
+  color: #F5E8EF;
+}
+
+
+/* ============================================================
+   移动端全局优化 · Mobile Global Optimizations
+   ============================================================ */
+@media (max-width: 900px) {
+  /* 增大触摸目标 */
+  .n-button:not(.n-button--tiny):not(.n-button--quaternary) {
+    min-height: 44px;
+  }
+
+  /* 表格横向滚动更流畅 */
+  .n-data-table .n-data-table-wrapper {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 输入框增大触摸区域 */
+  .n-input .n-input__input-el,
+  .n-input .n-input__textarea-el {
+    font-size: 16px; /* 防止 iOS 自动缩放 */
+  }
+
+  /* 模态框全宽 */
+  .n-modal .n-card {
+    max-width: calc(100vw - 24px) !important;
+  }
+
+  /* 防止表格/卡片内容溢出 */
+  .n-card__content {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 底部安全区适配 */
+  .page-view, .page-container {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+@media (max-width: 480px) {
+  /* 步骤条描述隐藏，节省空间 */
+  .n-steps .n-step-content {
+    display: none !important;
+  }
+
+  /* 标签页更紧凑 */
+  .n-tabs-tab {
+    padding: 6px 8px !important;
+  }
 }
