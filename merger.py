@@ -1650,8 +1650,10 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
             new_rows_by_city[city].append(s_row)
             existing_weifayun_orders.add(jiaohuo)
 
-        # 按城市分组写入，城市间插入空行分隔
+        # 按城市分组写入，每个城市组末尾添加 SUBTOTAL 小计行（红色字体）
+        _RED_FONT = Font(color="FFFF0000")
         for city in city_order:
+            group_start_row = wfy_max_row + 1
             for s_row in new_rows_by_city[city]:
                 wfy_max_row += 1
                 # 字段映射（交货汇总 → 未发运），B_ADDRESS1/备注交换
@@ -1699,8 +1701,14 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
                             n_cell.border = copy(t_cell.border)
 
                 appended_weifayun_count += 1
-            # 城市间插入空行分隔（最后一个城市后不加）
+            # 城市组末尾添加 SUBTOTAL 小计行（红色字体），与原表格式一致
+            group_end_row = wfy_max_row
             wfy_max_row += 1
+            ws_weifayun.cell(row=wfy_max_row, column=12, value=f"=SUBTOTAL(9,L{group_start_row}:L{group_end_row})")
+            ws_weifayun.cell(row=wfy_max_row, column=13, value=f"=SUBTOTAL(9,M{group_start_row}:M{group_end_row})")
+            ws_weifayun.cell(row=wfy_max_row, column=14, value=f"=SUBTOTAL(9,N{group_start_row}:N{group_end_row})")
+            for col in [12, 13, 14]:
+                ws_weifayun.cell(row=wfy_max_row, column=col).font = copy(_RED_FONT)
 
     # 统一日期格式 + 列宽
     normalize_date_formats(master_wb)
