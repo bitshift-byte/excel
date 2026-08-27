@@ -306,7 +306,7 @@ def _make_summary_row(
     return (
         bao_date, huo_date, city, yundafang, xiaoshou, jiaohuo,
         name, street, qty, weight, volume, factory,
-        b_address1, beizhu, None, None,
+        beizhu, b_address1, None, None,
     )
 
 

@@ -146,9 +146,9 @@ def test_build_pivot_fills_from_kuacang_map():
     assert len(data_row) == 1
     row = data_row[0]
 
-    # col 12 = B_ADDRESS1, col 13 = 备注
-    assert row[12] == "PO15516585260821002-1"
-    assert "配额会释放" in str(row[13])
+    # col 12 = 备注, col 13 = B_ADDRESS1
+    assert "配额会释放" in str(row[12])
+    assert row[13] == "PO15516585260821002-1"
 
 
 # =====================================================================
@@ -181,8 +181,8 @@ def test_build_pivot_priority_logistics_over_kuacang():
     )
 
     data_row = [r for r in result if r[5] == "2424827207"][0]
-    assert data_row[12] == "FROM_LOGISTICS"
-    assert "LOGI_REMARK" in str(data_row[13])
+    assert "LOGI_REMARK" in str(data_row[12])
+    assert data_row[13] == "FROM_LOGISTICS"
 
 
 # =====================================================================
@@ -263,9 +263,9 @@ def test_build_pivot_partial_fill_so_addr_kuacang_remark():
 
     row = [r for r in result if str(r[5]) == "2424827207"][0]
     # so_map takes priority for B_ADDRESS1 (since it's checked before kuacang)
-    assert row[12] == "FROM_SO"
+    assert row[13] == "FROM_SO"
     # so_map's 备注 is empty, so kuacang's 备注 should fill in
-    assert "KC_REMARK" in str(row[13])
+    assert "KC_REMARK" in str(row[12])
 
 
 # =====================================================================
@@ -298,8 +298,8 @@ def test_build_pivot_partial_fill_logistics_addr_kuacang_remark():
     )
 
     row = [r for r in result if str(r[5]) == "2424827207"][0]
-    assert row[12] == "FROM_LOGI"
-    assert "KC_REMARK" in str(row[13])
+    assert "KC_REMARK" in str(row[12])
+    assert row[13] == "FROM_LOGI"
 
 
 # =====================================================================
@@ -442,7 +442,8 @@ def test_build_pivot_no_kuacang_map():
     )
 
     row = [r for r in result if str(r[5]) == "2424827207"][0]
-    assert row[12] == "FROM_LOGI"
+    assert "LOGI_REMARK" in str(row[12])
+    assert row[13] == "FROM_LOGI"
 
 
 # =====================================================================
@@ -572,11 +573,11 @@ def test_build_pivot_logistics_addr_kuacang_remark_cross_fill():
 
     row = [r for r in result if str(r[5]) == "2424827207"][0]
     # logistics takes full priority — both B_ADDRESS1 and 备注 from logistics
-    assert row[12] == "LOGI_ADDR"
-    assert "LOGI_REMARK" in str(row[13])
+    assert "LOGI_REMARK" in str(row[12])
+    assert row[13] == "LOGI_ADDR"
     # kuacang values should NOT appear
-    assert "KC_ADDR" not in str(row[12])
-    assert "KC_REMARK" not in str(row[13])
+    assert "KC_REMARK" not in str(row[12])
+    assert "KC_ADDR" not in str(row[13])
 
 # =====================================================================
 # RED 17: 工单号 → B_ADDRESS1 (priority over 客户订单号), 填写人 → 备注 (priority over 备注/仓库备注)
@@ -707,5 +708,5 @@ def test_build_pivot_fills_gdh_txr_separate():
         filtered_rows, logistics_map, so_map, kuacang_map
     )
     row = [r for r in result if str(r[5]) == "2424827180"][0]
-    assert row[12] == "R_20260821_019"
-    assert row[13] == "HFCDC.CML"
+    assert row[12] == "HFCDC.CML"
+    assert row[13] == "R_20260821_019"

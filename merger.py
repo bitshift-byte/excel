@@ -550,8 +550,8 @@ def build_pivot_by_delivery(filtered_rows: list, logistics_map: Optional[Dict] =
             zzl,
             ywl,
             entry["工厂"],
-            addr1,
             remark,
+            addr1,
             o_val,
             p_val,
         ])
@@ -1484,6 +1484,178 @@ def merge_files(
     return {"output_path": output_path, "stats": stats, "previews": previews}
 
 
+
+# ---- 未发运 sheet 重排序辅助 ----
+
+import re as _re
+
+def _normalize_address_for_sort(address: str) -> str:
+    """归一化地址用于排序和分组。
+
+    修正"湖南省长沙县" → "湖南省长沙市长沙县"等格式不一致问题：
+    如果"省"后面直接跟"县"（缺少"市"），插入对应地级市名。
+    """
+    if not address:
+        return ""
+    addr = address.strip()
+    # 匹配 "湖南省XX县" → "湖南省XX市XX县"（XX县 省略了市名）
+    m = _re.match(r'^(湖南省)([^市]+县)', addr)
+    if m:
+        prefix = m.group(1)
+        county = m.group(2)
+        # 长沙县 → 长沙市长沙县
+        city = county.replace('县', '市')
+        addr = prefix + city + county + addr[len(m.group(0)):]
+    return addr
+
+
+def _restructure_weifayun_sheet(ws, factory_fallback_fill, std_border, red_font):
+    """重排未发运 sheet。
+
+    - 901 行：保持原始顺序不动，按连续 (status, address) 分组插 SUBTOTAL
+    - 非901 行：按地址排序，按地址分组插 SUBTOTAL
+    - 统一样式：细边框、左对齐、工厂色、不可提红色字体
+    """
+    from copy import copy as _copy
+    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+
+    max_col = ws.max_column
+
+    # ---- 1. 收集所有数据行，按 901/非901 分开 ----
+    rows_901 = []      # 901 行保持原始顺序
+    rows_non_901 = []   # 非901 行待排序
+
+    for r in range(2, ws.max_row + 1):
+        c4 = ws.cell(r, 4).value   # 客户代码
+        c6 = ws.cell(r, 6).value   # 订单号
+        c12 = ws.cell(r, 12).value # 数量
+
+        # 跳过 SUBTOTAL 行（公式行）— 必须是 =SUBTOTAL 开头的字符串
+        if isinstance(c12, str) and c12.startswith("=SUBTOTAL"):
+            continue
+        # 跳过空行 — 所有关键列均为空
+        if all(ws.cell(r, c).value is None for c in (3, 4, 5, 6, 10, 12, 15)):
+            continue
+
+        row_vals = []
+        for c in range(1, max_col + 1):
+            row_vals.append(ws.cell(r, c).value)
+
+        factory = str(row_vals[14]).strip() if len(row_vals) > 14 and row_vals[14] else ""
+        if factory == "901":
+            rows_901.append(row_vals)
+        else:
+            rows_non_901.append(row_vals)
+
+    # ---- 2. 非901 按地址排序 ----
+    rows_non_901.sort(key=lambda rv: _normalize_address_for_sort(str(rv[10]).strip() if len(rv) > 10 and rv[10] else ""))
+
+    # ---- 3. 清空数据区（保留表头）----
+    for r in range(2, ws.max_row + 1):
+        for c in range(1, max_col + 1):
+            cell = ws.cell(r, c)
+            cell.value = None
+            cell.fill = PatternFill()
+            cell.font = Font()
+            cell.border = Border()
+            cell.alignment = Alignment()
+            cell.number_format = "General"
+
+    # ---- 4. 写入 901 区（保持原始顺序，按连续 status+address 分组）----
+    _default_font = Font(size=11)
+    current_row = 2
+
+    def _write_data_row(row_vals):
+        nonlocal current_row
+        status = str(row_vals[6]).strip() if len(row_vals) > 6 and row_vals[6] else ""
+        factory = str(row_vals[14]).strip() if len(row_vals) > 14 and row_vals[14] else ""
+
+        for c in range(1, max_col + 1):
+            cell = ws.cell(current_row, c)
+            val = row_vals[c - 1] if c - 1 < len(row_vals) else None
+            cell.value = val
+            cell.border = _copy(std_border)
+            cell.alignment = Alignment(horizontal="left", vertical="center")
+            cell.font = _copy(_default_font)
+
+        # 工厂色
+        canonical_fill = factory_fallback_fill.get(factory)
+        if canonical_fill:
+            ws.cell(current_row, 15).fill = _copy(canonical_fill)
+
+        # 不可提 → col7 红色加粗
+        if status == "不可提":
+            ws.cell(current_row, 7).font = _copy(red_font)
+
+        current_row += 1
+
+    # 901 区：按连续 (status, address) 分组
+    group_start = current_row
+    prev_901_key = None
+    for row_vals in rows_901:
+        status = str(row_vals[6]).strip() if len(row_vals) > 6 and row_vals[6] else ""
+        address = str(row_vals[10]).strip() if len(row_vals) > 10 and row_vals[10] else ""
+        cur_key = (status, address)
+
+        if prev_901_key is not None and cur_key != prev_901_key:
+            _write_wfy_subtotal(ws, current_row, group_start, current_row - 1,
+                                max_col, std_border, red_font)
+            current_row += 1
+            group_start = current_row
+
+        prev_901_key = cur_key
+        _write_data_row(row_vals)
+
+    if prev_901_key is not None:
+        _write_wfy_subtotal(ws, current_row, group_start, current_row - 1,
+                            max_col, std_border, red_font)
+        current_row += 1
+
+    # ---- 5. 写入非901 区（按地址排序，按地址分组）----
+    group_start = current_row
+    prev_addr = None
+    for row_vals in rows_non_901:
+        address = str(row_vals[10]).strip() if len(row_vals) > 10 and row_vals[10] else ""
+        cur_key = _normalize_address_for_sort(address)
+
+        if prev_addr is not None and cur_key != prev_addr:
+            _write_wfy_subtotal(ws, current_row, group_start, current_row - 1,
+                                max_col, std_border, red_font)
+            current_row += 1
+            group_start = current_row
+
+        prev_addr = cur_key
+        _write_data_row(row_vals)
+
+    if prev_addr is not None:
+        _write_wfy_subtotal(ws, current_row, group_start, current_row - 1,
+                            max_col, std_border, red_font)
+        current_row += 1
+
+    # ---- 6. 清除尾部多余空行 ----
+    if current_row - 1 < ws.max_row:
+        ws.delete_rows(current_row, ws.max_row - (current_row - 1))
+
+    return current_row - 2  # 总写入行数（含 SUBTOTAL）
+
+
+def _write_wfy_subtotal(ws, row, start, end, max_col, std_border, red_font):
+    """在指定行写入 SUBTOTAL 公式行（L/M/N 列），并应用样式。"""
+    from copy import copy as _copy
+    from openpyxl.styles import Alignment
+
+    ws.cell(row, 12, value=f"=SUBTOTAL(9,L{start}:L{end})")
+    ws.cell(row, 13, value=f"=SUBTOTAL(9,M{start}:M{end})")
+    ws.cell(row, 14, value=f"=SUBTOTAL(9,N{start}:N{end})")
+    for col in range(1, max_col + 1):
+        cell = ws.cell(row, col)
+        cell.border = _copy(std_border)
+        cell.alignment = Alignment(horizontal="left", vertical="center")
+        if col in (12, 13, 14):
+            cell.font = _copy(red_font)
+
+
+
 def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = None) -> dict:
     """将邮件捞取的每日数据追加到总表（master table）格式中。
 
@@ -1529,10 +1701,23 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
 
     # ---- 2. 读取交货汇总 ----
     summary_rows = []
+    summary_headers = []
     if "交货汇总" in mail_wb.sheetnames:
         ws_summary = mail_wb["交货汇总"]
+        summary_headers = [c.value for c in ws_summary[1]]
         summary_rows = list(ws_summary.iter_rows(min_row=2, values_only=True))
     mail_wb.close()
+
+    # 按表头名定位 备注/B_ADDRESS1 列（兼容新旧两种列序的邮件捞取产物；
+    # 找不到表头时回退到新列序的固定位置 12/13）
+    def _summary_col(name, fallback):
+        for _i, _h in enumerate(summary_headers):
+            if _h is not None and str(_h).strip() == name:
+                return _i
+        return fallback
+
+    ci_beizhu = _summary_col("备注", 12)
+    ci_baddress = _summary_col("B_ADDRESS1", 13)
 
     # ---- 3. 打开输出文件，准备追加 ----
     master_wb = openpyxl.load_workbook(output_path)
@@ -1567,8 +1752,24 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
     # 总表明细有 37 列，邮件数据有 34 列
     # 列映射：总表[0]=交货, 总表[1]=空, 总表[2..34]=邮件[1..33], 总表[35..36]=空
     # 样式：从总表已有行中找到相同工厂值的行作为模板，复制其 fill/font/alignment/number_format
-    from openpyxl.styles import PatternFill, Font, Alignment
+    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+    from openpyxl.styles.colors import Color
+    # 标准细边框（田字格），用于无模板行时
+    _thin = Side(style="thin")
+    _STD_BORDER = Border(left=_thin, right=_thin, top=_thin, bottom=_thin)
     # 建立 工厂值 → 模板行号 映射（工厂在第13列/M）
+    # 未发运库区(工厂) → 填充色 的标准回退映射（当总表无对应工厂模板行时使用）
+    # 基于参考总表的实际颜色
+    _WFY_FACTORY_FALLBACK_FILL = {
+        "901":  PatternFill(patternType="solid", fgColor="FFFF0000"),   # 红色
+        "801":  PatternFill(patternType="solid", fgColor="FF92D050"),   # 绿色
+        "8137": PatternFill(patternType="solid", fgColor="FFFFFF00"),   # 黄色
+        "8205": PatternFill(patternType="solid", fgColor=Color(theme=4, tint=0.6)),  # 主题色
+        "301":  PatternFill(patternType="solid", fgColor="FF92D050"),   # 绿色
+        "YG":   PatternFill(patternType="solid", fgColor="FFFFFF00"),   # 黄色
+        "701":  PatternFill(patternType="solid", fgColor="FFFFFF00"),   # 黄色
+        # 8136: 无填充（保持默认）
+    }
     detail_factory_template = {}  # factory_str -> row_num
     for r in range(2, max_row + 1):
         fv = ws_detail.cell(row=r, column=13).value
@@ -1651,7 +1852,7 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
             existing_weifayun_orders.add(jiaohuo)
 
         # 按城市分组写入，每个城市组末尾添加 SUBTOTAL 小计行（红色字体）
-        _RED_FONT = Font(color="FFFF0000")
+        _RED_FONT = Font(color="FFFF0000", bold=True)
         for city in city_order:
             group_start_row = wfy_max_row + 1
             for s_row in new_rows_by_city[city]:
@@ -1681,14 +1882,15 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
                 ws_weifayun.cell(row=wfy_max_row, column=14, value=s_row[10])
                 # col14 库区 = 交货汇总 col11 工厂
                 ws_weifayun.cell(row=wfy_max_row, column=15, value=s_row[11])
-                # col20 B_ADDRESS1 = 交货汇总 col13 备注（交换！）
-                ws_weifayun.cell(row=wfy_max_row, column=21, value=s_row[13])
-                # col21 备注 = 交货汇总 col12 B_ADDRESS1（交换！）
-                ws_weifayun.cell(row=wfy_max_row, column=22, value=s_row[12])
+                # 同名直连：总表 B_ADDRESS1 ← 交货汇总「B_ADDRESS1」，总表 备注 ← 交货汇总「备注」
+                # （列位置按表头名解析，兼容不同列序的邮件捞取产物）
+                ws_weifayun.cell(row=wfy_max_row, column=21, value=s_row[ci_baddress])
+                ws_weifayun.cell(row=wfy_max_row, column=22, value=s_row[ci_beizhu])
 
                 # 复制样式：找到同库区(工厂)值的模板行，逐列复制 fill/font/alignment/number_format
                 factory_val = ws_weifayun.cell(row=wfy_max_row, column=15).value
-                template_row = wfy_factory_template.get(str(factory_val)) if factory_val else None
+                factory_str = str(factory_val).strip() if factory_val else ""
+                template_row = wfy_factory_template.get(factory_str) if factory_str else None
                 if template_row:
                     for col in range(1, ws_weifayun.max_column + 1):
                         t_cell = ws_weifayun.cell(row=template_row, column=col)
@@ -1699,16 +1901,27 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
                             n_cell.alignment = copy(t_cell.alignment)
                             n_cell.number_format = t_cell.number_format
                             n_cell.border = copy(t_cell.border)
+                # 无模板行时，应用标准细边框（田字格）+ 左对齐居中
+                if not template_row:
+                    for col in range(1, ws_weifayun.max_column + 1):
+                        ws_weifayun.cell(row=wfy_max_row, column=col).border = copy(_STD_BORDER)
+                        ws_weifayun.cell(row=wfy_max_row, column=col).alignment = Alignment(horizontal="left", vertical="center")
+                # 统一覆盖 col15(库区) 填充色为标准颜色（以参考总表为准）
+                canonical_fill = _WFY_FACTORY_FALLBACK_FILL.get(factory_str)
+                if canonical_fill:
+                    ws_weifayun.cell(row=wfy_max_row, column=15).fill = copy(canonical_fill)
 
                 appended_weifayun_count += 1
-            # 城市组末尾添加 SUBTOTAL 小计行（红色字体），与原表格式一致
-            group_end_row = wfy_max_row
-            wfy_max_row += 1
-            ws_weifayun.cell(row=wfy_max_row, column=12, value=f"=SUBTOTAL(9,L{group_start_row}:L{group_end_row})")
-            ws_weifayun.cell(row=wfy_max_row, column=13, value=f"=SUBTOTAL(9,M{group_start_row}:M{group_end_row})")
-            ws_weifayun.cell(row=wfy_max_row, column=14, value=f"=SUBTOTAL(9,N{group_start_row}:N{group_end_row})")
-            for col in [12, 13, 14]:
-                ws_weifayun.cell(row=wfy_max_row, column=col).font = copy(_RED_FONT)
+            # SUBTOTAL 由 _restructure_weifayun_sheet 统一生成，此处不重复写
+
+    # ---- 6. 重排未发运 sheet：901保持原始顺序分组，非901按地址排序 + SUBTOTAL ----
+    if "未发运" in master_wb.sheetnames:
+        _restructure_weifayun_sheet(
+            master_wb["未发运"],
+            _WFY_FACTORY_FALLBACK_FILL,
+            _STD_BORDER,
+            Font(color="FFFF0000", bold=True),
+        )
 
     # 统一日期格式 + 列宽
     normalize_date_formats(master_wb)
