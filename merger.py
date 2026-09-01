@@ -1509,46 +1509,80 @@ def _normalize_address_for_sort(address: str) -> str:
     return addr
 
 
+def _is_subtotal_row(ws, r: int) -> bool:
+    """检查第 r 行是否为 SUBTOTAL 公式行（col12 以 =SUBTOTAL 开头）。"""
+    c12 = ws.cell(r, 12).value
+    return isinstance(c12, str) and c12.startswith("=SUBTOTAL")
+
+
+def _is_jd_nonbom(b_address1_val) -> bool:
+    """判断 B_ADDRESS1 值是否以「京东NONBOM组套订单」开头。"""
+    if b_address1_val is None:
+        return False
+    return str(b_address1_val).startswith("京东NONBOM组套订单")
+
+
 def _restructure_weifayun_sheet(ws, factory_fallback_fill, std_border, red_font):
     """重排未发运 sheet。
 
-    - 901 行：保持原始顺序不动，按连续 (status, address) 分组插 SUBTOTAL
-    - 非901 行：按地址排序，按地址分组插 SUBTOTAL
-    - 统一样式：细边框、左对齐、工厂色、不可提红色字体
+    规则：
+    - 901 工厂行永远在最上面（含 B_ADDRESS1 京东NONBOM 强制改为 901 的行）
+    - 每个区内按「客户名称」(col10) 分组，每组末尾插 SUBTOTAL 小计行
+    - 同一客户分组内，同工厂值的行聚拢不交错（按 factory + 原始行号稳定排序）
+    - B_ADDRESS1 以「京东NONBOM组套订单」开头 → 工厂强制改 901，B_ADDRESS1 加粗棕色
+    - 空客户名称行排到数据区末尾，不加小计
     """
     from copy import copy as _copy
-    from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+    from collections import OrderedDict
+    from openpyxl.styles import PatternFill, Font, Alignment, Border
 
     max_col = ws.max_column
+    _default_font = Font(size=11)
+    _jd_font = Font(color="FF806000", bold=True)  # 棕色加粗
 
-    # ---- 1. 收集所有数据行，按 901/非901 分开 ----
-    rows_901 = []      # 901 行保持原始顺序
-    rows_non_901 = []   # 非901 行待排序
-
+    # ---- 1. 全表扫描收集 + 京东NONBOM识别 ----
+    all_rows = []  # [{vals, is_jd, orig_idx}]
     for r in range(2, ws.max_row + 1):
-        c4 = ws.cell(r, 4).value   # 客户代码
-        c6 = ws.cell(r, 6).value   # 订单号
-        c12 = ws.cell(r, 12).value # 数量
-
-        # 跳过 SUBTOTAL 行（公式行）— 必须是 =SUBTOTAL 开头的字符串
-        if isinstance(c12, str) and c12.startswith("=SUBTOTAL"):
+        if _is_subtotal_row(ws, r):
             continue
-        # 跳过空行 — 所有关键列均为空
+        # 跳过空行（关键列全空）
         if all(ws.cell(r, c).value is None for c in (3, 4, 5, 6, 10, 12, 15)):
             continue
+        row_vals = [ws.cell(r, c).value for c in range(1, max_col + 1)]
+        # 京东NONBOM 识别：强制改工厂为 901
+        is_jd = _is_jd_nonbom(row_vals[20] if len(row_vals) > 20 else None)
+        if is_jd:
+            row_vals[14] = "901"
+        all_rows.append({"vals": row_vals, "is_jd": is_jd, "orig_idx": r})
 
-        row_vals = []
-        for c in range(1, max_col + 1):
-            row_vals.append(ws.cell(r, c).value)
-
-        factory = str(row_vals[14]).strip() if len(row_vals) > 14 and row_vals[14] else ""
+    # ---- 2. 901区/非901区拆分 ----
+    rows_901 = []
+    rows_non_901 = []
+    for row in all_rows:
+        factory = str(row["vals"][14]).strip() if len(row["vals"]) > 14 and row["vals"][14] else ""
         if factory == "901":
-            rows_901.append(row_vals)
+            rows_901.append(row)
         else:
-            rows_non_901.append(row_vals)
+            rows_non_901.append(row)
 
-    # ---- 2. 非901 按地址排序 ----
-    rows_non_901.sort(key=lambda rv: _normalize_address_for_sort(str(rv[10]).strip() if len(rv) > 10 and rv[10] else ""))
+    def _group_by_customer(rows):
+        """按客户名称(col10, index9)分组，空客户名称行不归入。返回 (分组, 空客户行列表)。"""
+        groups = OrderedDict()
+        no_customer = []
+        for row in rows:
+            vals = row["vals"]
+            cust = str(vals[9]).strip() if len(vals) > 9 and vals[9] else ""
+            if not cust:
+                no_customer.append(row)
+                continue
+            if cust not in groups:
+                groups[cust] = []
+            groups[cust].append(row)
+        return groups, no_customer
+
+    groups_901, no_cust_901 = _group_by_customer(rows_901)
+    groups_non, no_cust_non = _group_by_customer(rows_non_901)
+    no_customer_rows = no_cust_901 + no_cust_non
 
     # ---- 3. 清空数据区（保留表头）----
     for r in range(2, ws.max_row + 1):
@@ -1561,24 +1595,24 @@ def _restructure_weifayun_sheet(ws, factory_fallback_fill, std_border, red_font)
             cell.alignment = Alignment()
             cell.number_format = "General"
 
-    # ---- 4. 写入 901 区（保持原始顺序，按连续 status+address 分组）----
-    _default_font = Font(size=11)
+    # ---- 4. 逐组写入 + SUBTOTAL ----
     current_row = 2
 
-    def _write_data_row(row_vals):
+    def _write_data_row(row):
         nonlocal current_row
-        status = str(row_vals[6]).strip() if len(row_vals) > 6 and row_vals[6] else ""
-        factory = str(row_vals[14]).strip() if len(row_vals) > 14 and row_vals[14] else ""
+        vals = row["vals"]
+        status = str(vals[6]).strip() if len(vals) > 6 and vals[6] else ""
+        factory = str(vals[14]).strip() if len(vals) > 14 and vals[14] else ""
 
         for c in range(1, max_col + 1):
             cell = ws.cell(current_row, c)
-            val = row_vals[c - 1] if c - 1 < len(row_vals) else None
+            val = vals[c - 1] if c - 1 < len(vals) else None
             cell.value = val
             cell.border = _copy(std_border)
             cell.alignment = Alignment(horizontal="left", vertical="center")
             cell.font = _copy(_default_font)
 
-        # 工厂色
+        # 工厂填充色
         canonical_fill = factory_fallback_fill.get(factory)
         if canonical_fill:
             ws.cell(current_row, 15).fill = _copy(canonical_fill)
@@ -1587,52 +1621,35 @@ def _restructure_weifayun_sheet(ws, factory_fallback_fill, std_border, red_font)
         if status == "不可提":
             ws.cell(current_row, 7).font = _copy(red_font)
 
+        # 京东NONBOM → col21 棕色加粗
+        if row["is_jd"]:
+            ws.cell(current_row, 21).font = _copy(_jd_font)
+
         current_row += 1
 
-    # 901 区：按连续 (status, address) 分组
-    group_start = current_row
-    prev_901_key = None
-    for row_vals in rows_901:
-        status = str(row_vals[6]).strip() if len(row_vals) > 6 and row_vals[6] else ""
-        address = str(row_vals[10]).strip() if len(row_vals) > 10 and row_vals[10] else ""
-        cur_key = (status, address)
-
-        if prev_901_key is not None and cur_key != prev_901_key:
+    def _write_group(groups):
+        nonlocal current_row
+        for cust, rows in groups.items():
+            # 组内按 (factory, orig_idx) 稳定排序聚拢
+            rows.sort(key=lambda row: (
+                str(row["vals"][14]).strip() if len(row["vals"]) > 14 and row["vals"][14] else "",
+                row["orig_idx"],
+            ))
+            group_start = current_row
+            for row in rows:
+                _write_data_row(row)
+            # 组末尾 SUBTOTAL
             _write_wfy_subtotal(ws, current_row, group_start, current_row - 1,
                                 max_col, std_border, red_font)
             current_row += 1
-            group_start = current_row
 
-        prev_901_key = cur_key
-        _write_data_row(row_vals)
+    # 901区各组 → 非901区各组 → 空客户行（不加小计）
+    _write_group(groups_901)
+    _write_group(groups_non)
+    for row in no_customer_rows:
+        _write_data_row(row)
 
-    if prev_901_key is not None:
-        _write_wfy_subtotal(ws, current_row, group_start, current_row - 1,
-                            max_col, std_border, red_font)
-        current_row += 1
-
-    # ---- 5. 写入非901 区（按地址排序，按地址分组）----
-    group_start = current_row
-    prev_addr = None
-    for row_vals in rows_non_901:
-        address = str(row_vals[10]).strip() if len(row_vals) > 10 and row_vals[10] else ""
-        cur_key = _normalize_address_for_sort(address)
-
-        if prev_addr is not None and cur_key != prev_addr:
-            _write_wfy_subtotal(ws, current_row, group_start, current_row - 1,
-                                max_col, std_border, red_font)
-            current_row += 1
-            group_start = current_row
-
-        prev_addr = cur_key
-        _write_data_row(row_vals)
-
-    if prev_addr is not None:
-        _write_wfy_subtotal(ws, current_row, group_start, current_row - 1,
-                            max_col, std_border, red_font)
-        current_row += 1
-
-    # ---- 6. 清除尾部多余空行 ----
+    # ---- 5. 清除尾部多余空行 ----
     if current_row - 1 < ws.max_row:
         ws.delete_rows(current_row, ws.max_row - (current_row - 1))
 
