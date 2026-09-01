@@ -26,6 +26,7 @@ docs/superpowers/
 # Temp files
 /tmp/
 *.log
+.omo/
 frontend/login-preview.png
 
 # macOS
