@@ -215,7 +215,9 @@ def read_all_sheets_for_override(filepath: str):
 def matches_keywords(subject: str, keywords: List[str]) -> bool:
     if not keywords:
         return True
-    return any(k and k in subject for k in keywords)
+    # 大小写不敏感：邮件主题里 RDC/RTS 等英文缩写大小写混用（rdc、Rdc、RDC 都有）
+    subj = (subject or "").lower()
+    return any(k and k.lower() in subj for k in keywords)
 
 
 def is_excel_attachment(filename: str) -> bool:

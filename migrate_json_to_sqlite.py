@@ -81,8 +81,14 @@ def migrate(force: bool = False):
         # 邮件配置
         mail_cfg = app_cfg.get("mail_config", {})
         if mail_cfg:
-            database.set_mail_config(mail_cfg)
-            print(f"[migrate] 邮件配置已迁移 (email={mail_cfg.get('email', 'N/A')})")
+            # 幂等保护：数据库中已配置过邮箱时，不再用 JSON 覆盖。
+            # 否则每次应用启动都会把用户在管理后台改过的配置回滚掉。
+            existing_mail = database.get_mail_config()
+            if existing_mail.get("email"):
+                print(f"[migrate] 数据库已有邮件配置 (email={existing_mail.get('email')})，跳过 JSON 覆盖")
+            else:
+                database.set_mail_config(mail_cfg)
+                print(f"[migrate] 邮件配置已迁移 (email={mail_cfg.get('email', 'N/A')})")
 
         # 功能开关
         features = app_cfg.get("features", {})
