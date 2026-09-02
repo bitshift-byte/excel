@@ -1928,6 +1928,14 @@ def merge_mail_into_master(master_path: str, mail_path: str, output_path: str = 
                 if canonical_fill:
                     ws_weifayun.cell(row=wfy_max_row, column=15).fill = copy(canonical_fill)
 
+                # 901 库区（含京东NONBOM组套订单）→ 提货状态改为「不可提」+ 红色加粗
+                # 仅作用于本次新追加的行；总表原有 901 行不动（由 _restructure_weifayun_sheet 保留原值）
+                baddress_val = ws_weifayun.cell(row=wfy_max_row, column=21).value
+                is_901_row = factory_str == "901" or _is_jd_nonbom(baddress_val)
+                if is_901_row:
+                    ws_weifayun.cell(row=wfy_max_row, column=7, value="不可提")
+                    ws_weifayun.cell(row=wfy_max_row, column=7).font = copy(_RED_FONT)
+
                 appended_weifayun_count += 1
             # SUBTOTAL 由 _restructure_weifayun_sheet 统一生成，此处不重复写
 

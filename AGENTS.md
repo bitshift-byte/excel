@@ -8,6 +8,38 @@ Unilever (联合利华) SAP delivery Excel merge/filter web system. Users upload
 
 **Stack**: FastAPI (Python 3.11) backend + Vue 3 SPA frontend (Vite, Naive UI, Pinia). SQLite for users/config/rules/sessions. openpyxl + xlrd for Excel I/O.
 
+## 功能清单（业务功能）
+
+下一个 AI 接手时先看这里，了解系统能做什么。
+
+### 1. Excel 合并（核心，`/api/analyze` + `/api/process`）
+- 上传多个 SAP 导出 Excel（06o/分销报表/分销下单量/跑单明细等），按内置标准 34 列 schema 归并。
+- 模糊匹配列名（`source_columns` 别名），支持手动纠正列映射。
+- 工厂值重映射（`BUILTIN_RULE.value_mappings`）：按源文件名关键词重写工厂值，如"分销报表"里 8136/8137/8205 → 901，"跑单明细"里 → 801。
+- 按省份/交货号区间筛选；输出含：全量数据、筛选数据、交货汇总（按交货号透视）、数据透析、工厂交货透视、奥妙明细/小计 等多个 sheet。
+- B_ADDRESS1/备注 通过物流信息映射（已发运/未发运 → SO 文件 → 跨仓订单 三级回退查找）。
+- 汇总行过滤：`项目`列为空的行视为小计行被丢弃。
+
+### 2. 邮件捞取（后台 IMAP，`mail_reader.py` + `/api/mail/*`）
+- 后台线程轮询 IMAP 邮箱，按关键词匹配主题，下载 Excel 附件并自动走合并流程。
+- 关键词匹配大小写不敏感；附件按数据日期归位，避免跨日邮件混入错误日期结果。
+- 工厂覆盖：主题/附件名/正文含特定关键词时强制改工厂值（`detect_factory_override`）。
+- 已处理 UID 记录到文件，避免重复处理。
+
+### 3. 邮件合并到总表（`/api/mail-merge/run`，`merger.merge_mail_into_master`）
+- 选一个邮件捞取产物 + 上传总表（已发运/未发运/明细/客户信息/组套/Sheet5 格式），把每日新订单追加进总表。
+- 明细 sheet：追加所有新交货号的所有行。
+- 未发运 sheet：从交货汇总追加新订单（B_ADDRESS1/备注按表头名解析列位置，兼容新旧列序）。
+- **901 标记**：新追加的 901 库区行（含 B_ADDRESS1 为"京东NONBOM组套订单"的行）→ 提货状态改为"不可提"+红色加粗。仅作用于新行，总表原有 901 行不动。
+- 未发运重排（`_restructure_weifayun_sheet`）：901 区在最上面 → 非901区 → 空客户行；每区内按客户名称分组，每组末尾插 SUBTOTAL 小计行（红色字体）；B_ADDRESS1 京东NONBOM → 工厂强制改 901 + 棕色加粗。
+
+### 4. 用户与权限（`auth.py` + `/admin/api/*`）
+- 用户/角色（admin/user）、设备绑定、按用户分配规则/省份/功能开关。
+- 规则管理（rules.json + SQLite）、应用配置、邮件配置。
+
+### 前端页面（`frontend/src/views/`）
+Login、Merge（合并）、Mail（邮件捞取）、MailMerge（邮件合并到总表）、Admin（用户管理）、Rules（规则管理）。
+
 ## Dev Commands
 
 ```bash
@@ -84,6 +116,13 @@ rules.json                File-based merge rules (user-created, NOT in SQLite)
 3. **`BUILTIN_RULE` in `merger.py` is hardcoded business logic.** It defines the Unilever standard 34-column schema with `source_columns` aliases for fuzzy header matching, plus `value_mappings` for the 工厂 (plant) field that remap values (e.g., `8136→701`) based on the source filename containing keywords like "分销下单量", "分销报表", "跑单明细". Changing this affects all merges.
 
 4. **Summary rows are filtered by missing 项目 (item) number.** During merge, any row where the `项目` column is empty/None is treated as a subtotal/summary row and dropped. This is domain-specific behavior, not a bug.
+
+4b. **901 库区 = 京东 NONBOM 组套订单（RTS 再包），是特殊业务标识。** 相关规则：
+   - `BUILTIN_RULE` 把"分销报表"里的 8136/8137/8205 重映射为 901。
+   - 未发运 sheet 里，B_ADDRESS1 以"京东NONBOM组套订单"开头的行 → 工厂强制改 901、B_ADDRESS1 棕色加粗（`_is_jd_nonbom` + `_restructure_weifayun_sheet`）。
+   - **新追加的 901 行**提货状态标"不可提"+红色加粗（仅在 `merge_mail_into_master` 追加阶段，`_RED_FONT`）；**总表原有 901 行保持原值不动**。
+   - `_restructure_weifayun_sheet` 重排未发运：901区置顶 → 按客户名称分组 → 每组末尾 SUBTOTAL 小计行。
+   - 901 行在已发运 sheet 不标"不可提"（已出库按业务语义不标）。
 
 5. **`config.py` has side effects at import.** It creates `data/`, `uploads/`, `output/` directories on module load. Importing `config` anywhere triggers directory creation.
 
