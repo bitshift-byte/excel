@@ -220,6 +220,45 @@ def matches_keywords(subject: str, keywords: List[str]) -> bool:
     return any(k and k.lower() in subj for k in keywords)
 
 
+# 数据日期识别：从邮件主题 + 附件名中解析业务数据所属日期
+# 按优先级依次匹配：
+#   1) YYYYMMDD（如 20260901）
+#   2) YYYY-MM-DD / YYYY.MM.DD / YYYY_MM_DD（如 2026_09_01）
+#   3) M-D / M.D / M月D日（如 8-31、9.1、9月1日；左侧不能是字母数字，避免 RDC2-15 误判）
+#   4) 紧凑 MMDD（如 0831、0901；左右不能是数字，避免截取长数字）
+_DATE_YMD_RE = re.compile(r'(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])')
+_DATE_SEP_RE = re.compile(r'(20\d{2})[-_/.](\d{1,2})[-_/.](\d{1,2})')
+_DATE_MD_RE = re.compile(r'(?<![0-9A-Za-z])(\d{1,2})[-/.月](\d{1,2})日?(?![0-9])')
+_DATE_COMPACT_RE = re.compile(r'(?<!\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?!\d)')
+
+
+def extract_data_date(subject: str, attachment_names: list, year: int):
+    """从邮件主题和附件名中识别「数据日期」，用于把迟到的邮件归到正确日期。
+
+    例：9-1 才收到的「RDC1今日下单量0831」应归到 8-31，而非混入 9-1 结果。
+    识别不到日期、或识别出多个互相冲突的日期时返回 None（视为目标日数据）。
+    """
+    text = " ".join([subject or ""] + list(attachment_names or []))
+    candidates = set()
+    for m in _DATE_YMD_RE.finditer(text):
+        candidates.add(datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3))))
+    for m in _DATE_SEP_RE.finditer(text):
+        candidates.add(datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3))))
+    for m in _DATE_MD_RE.finditer(text):
+        candidates.add(datetime.date(year, int(m.group(1)), int(m.group(2))))
+    for m in _DATE_COMPACT_RE.finditer(text):
+        candidates.add(datetime.date(year, int(m.group(1)), int(m.group(2))))
+    valid = set()
+    for c in candidates:
+        try:
+            valid.add(datetime.date(c.year, c.month, c.day))
+        except ValueError:
+            pass
+    if len(valid) == 1:
+        return valid.pop()
+    return None
+
+
 def is_excel_attachment(filename: str) -> bool:
     return filename.lower().endswith((".xlsx", ".xls", ".csv", ".tsv"))
 
@@ -486,8 +525,8 @@ def process_once(cfg: dict, force: bool = False) -> int:
         keywords = cfg.get("subject_keywords", [])
         log(f"共 {len(items)} 封邮件，其中新邮件 {len(new_items)} 封")
         handled = 0
-        all_files = []
-        _factory_override_map = {}  # 附件名 → 目标工厂值
+        files_by_date = {}    # 数据日期 -> [附件路径, ...]
+        factory_by_date = {}  # 数据日期 -> {附件名: 目标工厂值}
         collect_dir = tempfile.TemporaryDirectory()
         collect_path = collect_dir.name
         file_idx = 0
@@ -507,7 +546,11 @@ def process_once(cfg: dict, force: bool = False) -> int:
                 file_idx += len(files)
                 matched = matches_keywords(subject, keywords)
                 if matched:
-                    all_files.extend([path for path, _ in files])
+                    # 识别数据日期：迟到的邮件（如 9-1 收到 8-31 的下单量）归到正确日期
+                    # 识别不到日期视为目标日数据
+                    data_date = extract_data_date(subject, attachment_names, target.year) or target
+                    files_by_date.setdefault(data_date, []).extend([path for path, _ in files])
+                    factory_map = factory_by_date.setdefault(data_date, {})
                     processed.add(f"{folder}::{uid.decode()}")
                     handled += 1
                     # 工厂标识识别：逐个附件检测工厂关键字
@@ -520,10 +563,10 @@ def process_once(cfg: dict, force: bool = False) -> int:
                         body_for_detect = "" if multi_attachment else body_text
                         factory_target = detect_factory_override(subject, [att_name], body_for_detect)
                         if factory_target:
-                            _factory_override_map[att_name] = factory_target
+                            factory_map[att_name] = factory_target
                             detected_any = True
                     if detected_any:
-                        overrides = ", ".join(f"{k}→{v}" for k, v in _factory_override_map.items() if k in attachment_names)
+                        overrides = ", ".join(f"{k}→{v}" for k, v in factory_map.items() if k in attachment_names)
                         log(f"匹配: {subject} → {len(files)} 个附件 [{overrides}]")
                     else:
                         log(f"匹配: {subject} → {len(files)} 个附件")
@@ -536,22 +579,25 @@ def process_once(cfg: dict, force: bool = False) -> int:
                 })
             except Exception as e:
                 log(f"处理失败: {uid.decode()} - {e}")
-        if all_files:
-            result = merge_files(
-                file_paths=all_files,
-                selected_sheets=None,
-                provinces=cfg.get("provinces", []),
-                rule_id=cfg.get("rule_id"),
-                output_dir=output_dir,
-                output_prefix=cfg.get("output_prefix", "邮件合并"),
-                date_str=target.strftime("%Y-%m-%d"),
-            )
-            log(f"合并完成: 全量 {result['stats']['total_merged_rows']} 行，筛选 {result['stats']['filtered_rows']} 行")
-            # 工厂字段后处理：根据邮件识别到的工厂关键字覆盖工厂值
-            if _factory_override_map:
-                modified = apply_factory_override(result["output_path"], _factory_override_map, collect_path)
-                if modified:
-                    log(f"工厂标识覆盖: 修改 {modified} 行")
+        if files_by_date:
+            for data_date in sorted(files_by_date.keys()):
+                bucket_files = files_by_date[data_date]
+                factory_map = factory_by_date.get(data_date, {})
+                result = merge_files(
+                    file_paths=bucket_files,
+                    selected_sheets=None,
+                    provinces=cfg.get("provinces", []),
+                    rule_id=cfg.get("rule_id"),
+                    output_dir=output_dir,
+                    output_prefix=cfg.get("output_prefix", "邮件合并"),
+                    date_str=data_date.strftime("%Y-%m-%d"),
+                )
+                log(f"合并完成[{data_date}]: 全量 {result['stats']['total_merged_rows']} 行，筛选 {result['stats']['filtered_rows']} 行")
+                # 工厂字段后处理：根据邮件识别到的工厂关键字覆盖工厂值
+                if factory_map:
+                    modified = apply_factory_override(result["output_path"], factory_map, collect_path)
+                    if modified:
+                        log(f"工厂标识覆盖[{data_date}]: 修改 {modified} 行")
         else:
             log("无匹配附件，跳过合并")
         if not force:
